@@ -1,0 +1,4 @@
+*.o
+http3_server
+logs/*.log
+cert/*
