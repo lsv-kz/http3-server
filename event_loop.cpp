@@ -14,7 +14,7 @@ void Server::add_to_list(Connect *c)
         list_start = c;
 }
 //======================================================================
-void Server::close_connect(Connect *c) // del_from_list
+void Server::close_connect(Connect *c)
 {
     if (c->prev)
         c->prev->next = c->next;
@@ -156,9 +156,9 @@ void Server::event_loop(SSL *quic_listener, int socket_fd)
 
     unsigned int num_conn = 0;
 
-    for ( ; ; )
+    bool run = true;
+    for ( ; run; )
     {
-        //poll_timeout = get_poll_timeout(quic_listener);
         poll_fd[0].events = 0;
         //if (SSL_net_read_desired(quic_listener))
             poll_fd[0].events |= POLLIN;
@@ -170,8 +170,6 @@ void Server::event_loop(SSL *quic_listener, int socket_fd)
             poll_timeout = set_poll();
             poll_num += work_cgi;
 
-            //if (poll_timeout > 10)
-            //    poll_timeout = 10;
             if (poll_timeout < 0)
             {
                 fprintf(stderr, "[%s]!!!!!!!!!!<%s:%d> 0x%02X, timeout=%d, poll_num=%d, work_cgi=%d\n", log_time().c_str(), __func__, __LINE__, poll_fd[0].events, poll_timeout, poll_num, work_cgi);
@@ -187,8 +185,11 @@ void Server::event_loop(SSL *quic_listener, int socket_fd)
         if (ret < 0)
         {
             fprintf(stderr, "<%s:%d> err poll(0x%02X, , ): %s\n", __func__, __LINE__, poll_fd[0].events, strerror(errno));
-            //if (errno == EINTR)
-            //    continue;
+            if (errno == EINTR)
+            {
+                run = false;
+                continue;
+            }
             break;
         }
 
@@ -258,7 +259,6 @@ void Server::event_loop(SSL *quic_listener, int socket_fd)
 //======================================================================
 void Server::connect_handler()
 {
-    //fprintf(stderr, "<%s:%d> -------- connect_handler ---------------\n", __func__, __LINE__);
     time_t now = time(NULL);
     Connect *c = list_start, *next = NULL;
     for ( ; c; c = next)
@@ -515,7 +515,7 @@ int Server::stream_handler(Connect *c, Stream *s)
 
     if (s->status == SEND_DATA)
     {
-        char buf[16000]; // 8192  16384 32768
+        char buf[16000];
 
         if (s->data.size() == 0)
         {

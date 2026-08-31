@@ -32,7 +32,6 @@
 #include "huffman.h"
 
 extern const char *static_tab[][2];
-extern int all_cgi;
 
 const int  ERR_TRY_AGAIN = -1000;
 
@@ -46,20 +45,20 @@ struct Config
     std::string DocumentRoot;
     std::string ScriptDir;
     std::string LogDir;
-    
+
     std::string Certificate;
     std::string CertificateKey;
-    
+
     std::string UsePHP;
     std::string PathPHP;
-    
+
     bool ServerNameIndication = false;
-    
+
     int TimeOut = 15;
-    
+
     int MaxCgiProc = 5;
     int TimeoutCGI = 5;
-    
+
     bool ShowMediaFiles = false;
 };
 
@@ -130,7 +129,7 @@ enum CGI_TYPE { CGI, PHPCGI, PHPFPM, FASTCGI, SCGI, };
 struct Cgi
 {
     CGI_TYPE cgi_type;
-    
+
     bool start = false;
     bool end = false;
 
@@ -140,9 +139,9 @@ struct Cgi
     std::string path;
     int to_script;
     int from_script;
-    
+
     long long send_post_data = 0;
-    
+
     BytesArray headers;
 
     ~Cgi()
@@ -343,9 +342,8 @@ struct Server
     int connect_shutdown(Connect *c, const char *func, int line);
     int create_response(Connect *c, Stream *s);
 
-    ~Server()
+    void close_connections()
     {
-        fprintf(stderr, "<%s:%d> all_cgi=%d\n", __func__, __LINE__, all_cgi);
         Connect *c = list_start, *next = NULL;
         for ( ; c; c = next)
         {
@@ -357,6 +355,13 @@ struct Server
                 close_connect(c);
             }
         }
+    }
+
+    ~Server()
+    {
+        fprintf(stderr, "<%s:%d> all_cgi=%d\n", __func__, __LINE__, all_cgi);
+        if (list_start)
+            close_connections();
 
         if (poll_fd)
         {

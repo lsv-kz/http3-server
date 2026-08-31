@@ -94,6 +94,7 @@ int main()
 
     Server server;
     server.event_loop(quic_listener, server_fd);
+    server.close_connections();
 
     SSL_free(quic_listener);
     SSL_CTX_free(ctx);

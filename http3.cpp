@@ -2,7 +2,6 @@
 
 using namespace std;
 
-extern int all_cgi, work_cgi;
 //======================================================================
 int pow_(int x, int y)
 {
@@ -173,7 +172,7 @@ int parse_headers(Stream *s)
         }
 
         fprintf(stderr, "[0x%02X] [%s: %s]\n", ch, name.c_str(), val.c_str());
-        //fprintf(stderr, "[0x%02X] [%08b] [%s: %s]\n", ch, ch, name.c_str(), val.c_str());
+
         if (name == ":method")
         {
             s->method = val;
@@ -277,7 +276,6 @@ int Server::create_response(Connect *c, Stream *s)
             s->status = READ_DATA;
         else
             s->status = SEND_HEADERS;
-fprintf(stderr, "<%s:%d> --------------- CGI %d, all_cgi=%d -------------\n", __func__, __LINE__, s->status, all_cgi);
         return 0;
     }
     else if (strstr(s->decode_path.c_str(), ".php"))
@@ -289,7 +287,6 @@ fprintf(stderr, "<%s:%d> --------------- CGI %d, all_cgi=%d -------------\n", __
             s->status = READ_DATA;
         else
             s->status = SEND_HEADERS;
-fprintf(stderr, "<%s:%d> --------------- PHP %d, all_cgi=%d -------------\n", __func__, __LINE__, s->status, all_cgi);
         if (conf->UsePHP == "php-cgi")
         {
             s->cgi.cgi_type = PHPCGI;
@@ -347,13 +344,9 @@ fprintf(stderr, "<%s:%d> --------------- PHP %d, all_cgi=%d -------------\n", __
         }
 
         if (s->resp_status == RS206)
-        {
             headers_create(s, RS206, 4);
-        }
         else
-        {
             headers_create(s, RS200, 4);
-        }
 
         header_add(s, 92, conf->ServerSoftware.c_str());
 
@@ -377,7 +370,10 @@ fprintf(stderr, "<%s:%d> --------------- PHP %d, all_cgi=%d -------------\n", __
         if (s->fd < 0)
         {
             fprintf(stderr, "<%s:%d> Error open(%s): %s\n", __func__, __LINE__, s->full_path.c_str(), strerror(errno));
-            create_error_message(s, RS404, "404 Not Found");
+            if (errno == EACCES)
+                create_error_message(s, RS403, "403 Forbidden");
+            else
+                create_error_message(s, RS404, "404 Not Found");
             s->status = SEND_HEADERS;
             s->source_data = FROM_DATA_BUFFER;
         }
@@ -448,7 +444,7 @@ int read_head_frame(Stream *s)
     }
     else if (ret == 0)
         return 0;
-//hex_print_stderr(__func__, __LINE__, buf, ret);
+
     type = (unsigned char)buf[0];
     if (type > 4)
     {
@@ -496,7 +492,7 @@ int read_head_frame(Stream *s)
             s->frame_size <<= 8;
         }
     }
-//fprintf(stderr, "*<%s:%d> type=%d, %s, size=%d\n", __func__, __LINE__, type, get_str_frame_type((HTTP3_FRAME_TYPE)type), s->frame_size);
+
     ret = ssl_read(s->ssl, buf, len_bytes + 1, &s->err);
     if (ret <= 0)
     {
