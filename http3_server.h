@@ -52,6 +52,9 @@ struct Config
     std::string UsePHP;
     std::string PathPHP;
 
+    int MaxAcceptConnections;
+    int MaxStreams;
+
     bool ServerNameIndication = false;
 
     int TimeOut = 15;
@@ -214,8 +217,8 @@ struct Stream
     
     ~Stream()
     {
-        fprintf(stdout, "[%u/%u]<%s:%d> data=%lld, all_data=%lld, cgi.end=%d\n", num_conn, num_stream, __func__, __LINE__, data_send, all_data_send, cgi.end);
-        fprintf(stderr, "[%u/%u]<%s:%d> data=%lld, all_data=%lld, cgi.end=%d\n", num_conn, num_stream, __func__, __LINE__, data_send, all_data_send, cgi.end);
+        fprintf(stdout, "[%u/%u~]<%s:%d> data=%lld, all_data=%lld, cgi.end=%d\n", num_conn, num_stream, __func__, __LINE__, data_send, all_data_send, cgi.end);
+        fprintf(stderr, "[%u/%u~]<%s:%d> data=%lld, all_data=%lld, cgi.end=%d\n", num_conn, num_stream, __func__, __LINE__, data_send, all_data_send, cgi.end);
         if (ssl)
         {
             SSL_free(ssl);
@@ -235,6 +238,8 @@ struct Connect
     unsigned int num_conn = 0;
     unsigned int num_stream = 0;
 
+    int num_work_stream = 0;
+
     time_t conn_timer = 0;
     bool wait_write = false;
 
@@ -248,8 +253,6 @@ struct Connect
     SSL *ctrl_ssl = NULL;
     SSL *enc_ssl = NULL;
     SSL *dec_ssl = NULL;
-
-    int work_stream = 0;
 
     long long size_send_data = 0;
     long long size_send_frame_data = 0;
@@ -270,8 +273,9 @@ struct Connect
         stream_end = s;
         if (!stream_start)
             stream_start = s;
-fprintf(stderr, "[%u/%d]<%s:%d> Create Stream\n", num_conn, num_stream, __func__, __LINE__);
-        ++work_stream;
+        ++num_work_stream;
+fprintf(stderr, "[%u/%d]<%s:%d> Create Stream, work_stream=%d\n", num_conn, num_stream, __func__, __LINE__, num_work_stream);
+fprintf(stdout, "[%u/%d]<%s:%d> Create Stream, work_stream=%d\n", num_conn, num_stream, __func__, __LINE__, num_work_stream);
         return s;
     }
 
@@ -287,7 +291,7 @@ fprintf(stderr, "[%u/%d]<%s:%d> Create Stream\n", num_conn, num_stream, __func__
         else
             stream_end = s->prev;
         delete s;
-        --work_stream;
+        --num_work_stream;
     }
 
     Connect()
@@ -297,8 +301,8 @@ fprintf(stderr, "[%u/%d]<%s:%d> Create Stream\n", num_conn, num_stream, __func__
 
     ~Connect()
     {
-        fprintf(stderr, "[%u]<%s:%d> size_send_data=%lld, size_send_frame_data=%lld\n", num_conn, __func__, __LINE__, size_send_data, size_send_frame_data);
-        fprintf(stdout, "[%u]<%s:%d> size_send_data=%lld, size_send_frame_data=%lld\n", num_conn, __func__, __LINE__, size_send_data, size_send_frame_data);
+        fprintf(stderr, "[%u~]<%s:%d> size_send_data=%lld, size_send_frame_data=%lld, work_stream=%d\n", num_conn, __func__, __LINE__, size_send_data, size_send_frame_data, num_work_stream);
+        fprintf(stdout, "[%u~]<%s:%d> size_send_data=%lld, size_send_frame_data=%lld, work_stream=%d\n", num_conn, __func__, __LINE__, size_send_data, size_send_frame_data, num_work_stream);
         if (ctrl_ssl)
             SSL_free(ctrl_ssl);
         if (enc_ssl)
@@ -331,6 +335,8 @@ struct Server
 
     struct pollfd *poll_fd = NULL;
 
+    int num_accept_conn = 0;
+
     void add_to_list(Connect *c);
     void close_connect(Connect *c);
     int set_poll();
@@ -359,7 +365,7 @@ struct Server
 
     ~Server()
     {
-        fprintf(stderr, "<%s:%d> all_cgi=%d\n", __func__, __LINE__, all_cgi);
+        fprintf(stderr, "~<%s:%d> all_cgi=%d\n", __func__, __LINE__, all_cgi);
         if (list_start)
             close_connections();
 

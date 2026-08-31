@@ -614,7 +614,10 @@ int Server::accept_stream(Connect *c, int stream_num)
             }
         }
         
-        stream_num = SSL_get_accept_stream_queue_len(c->ssl_conn);
+        if (c->num_work_stream < conf->MaxStreams)
+            stream_num = SSL_get_accept_stream_queue_len(c->ssl_conn);
+        else
+            break;
     }
     
     return ret;

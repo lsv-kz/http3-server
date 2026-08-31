@@ -401,6 +401,10 @@ static int read_conf_file(FILE *fconf)
             }
             else if (!strcmp(s1, "PathPHP"))
                 c.PathPHP = s2;
+            else if ((!strcmp(s1, "MaxAcceptConnections")) && is_number(s2))
+                c.MaxAcceptConnections = atoi(s2);
+            else if ((!strcmp(s1, "MaxStreams")) && is_number(s2))
+                c.MaxStreams = atoi(s2);
             else if (!strcmp(s1, "ServerNameIndication"))
             {
                 if (!strcmp_case(s2, "on"))

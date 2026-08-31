@@ -12,6 +12,7 @@ void Server::add_to_list(Connect *c)
     list_end = c;
     if (!list_start)
         list_start = c;
+    ++num_accept_conn;
 }
 //======================================================================
 void Server::close_connect(Connect *c)
@@ -26,7 +27,9 @@ void Server::close_connect(Connect *c)
     else
         list_end = c->prev;
     unsigned int num_conn = c->num_conn;
-    delete c;string close_time = log_time();
+    delete c;
+    --num_accept_conn;
+    string close_time = log_time();
     fprintf(stderr, "[%s] ********** close connect %u ***********\n", close_time.c_str(), num_conn);
     fprintf(stdout, "[%s] ********** close connect %u ***********\n", close_time.c_str(), num_conn);
 }
@@ -235,19 +238,22 @@ void Server::event_loop(SSL *quic_listener, int socket_fd)
             break;
         }
 
-        SSL *ssl_conn = SSL_accept_connection(quic_listener, 0);
-        if (ssl_conn)
+        if (num_accept_conn < conf->MaxAcceptConnections)
         {
-            Connect *new_conn = new Connect;
-            new_conn->ssl_conn = ssl_conn;
-            new_conn->quic_listener = quic_listener;
-            new_conn->num_conn = ++num_conn;
-            string create_time = log_time();
-            print_err(new_conn, "SSL_accept_connection(): OK, events=0x%02X/0x%02X\n", poll_fd[0].events, poll_fd[0].revents);
-            print_err(new_conn, "========= Create new Connect =========\n");
-            fprintf(stdout, "[%s] ========= Create new Connect [%u] =========\n", create_time.c_str(), num_conn);
-            new_conn->conn_timer = time(NULL);
-            add_to_list(new_conn);
+            SSL *ssl_conn = SSL_accept_connection(quic_listener, 0);
+            if (ssl_conn)
+            {
+                Connect *new_conn = new Connect;
+                new_conn->ssl_conn = ssl_conn;
+                new_conn->quic_listener = quic_listener;
+                new_conn->num_conn = ++num_conn;
+                string create_time = log_time();
+                print_err(new_conn, "SSL_accept_connection(): OK, events=0x%02X/0x%02X\n", poll_fd[0].events, poll_fd[0].revents);
+                print_err(new_conn, "========= Create new Connect =========\n");
+                fprintf(stdout, "[%s] ========= Create new Connect [%u] =========\n", create_time.c_str(), num_conn);
+                new_conn->conn_timer = time(NULL);
+                add_to_list(new_conn);
+            }
         }
 
         if (list_start)
@@ -366,14 +372,17 @@ void Server::connect_handler()
 
         if (c->status == CONNECT_OK)
         {
-            long n = SSL_get_accept_stream_queue_len(c->ssl_conn);
-            if ((n > 0) || c->tmp_stream)
+            if (c->num_work_stream < conf->MaxStreams)
             {
-                int ret = accept_stream(c, n);
-                if (ret < 0)
+                long n = SSL_get_accept_stream_queue_len(c->ssl_conn);
+                if ((n > 0) || c->tmp_stream)
                 {
-                    close_connect(c);
-                    continue;
+                    int ret = accept_stream(c, n);
+                    if (ret < 0)
+                    {
+                        close_connect(c);
+                        continue;
+                    }
                 }
             }
         }
