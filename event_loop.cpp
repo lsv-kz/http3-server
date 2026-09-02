@@ -36,12 +36,12 @@ void Server::close_connect(Connect *c)
 //======================================================================
 void Server::close_stream(Connect *c, Stream *s)
 {
-    print_log(c, s);
     if (s->cgi.pid)
     {
         --all_cgi;
-        fprintf(stderr, "<%s:%d> all_cgi=%d\n", __func__, __LINE__, all_cgi);
+        fprintf(stderr, "<%s:%u> all_cgi=%d\n", __func__, s->num_stream, all_cgi);
     }
+
     c->delete_stream(s);
 }
 //======================================================================
@@ -101,7 +101,7 @@ int Server::set_poll()
                     int ret = cgi_create_proc(c, s);
                     if (ret < 0)
                     {
-                        create_error_message(s, 500, "500 Internal Server Error, (Error create cgi)");
+                        create_error_message(s, 500, "<h1>500 Internal Server Error, (Error create cgi)</h1>");
                         s->source_data = FROM_DATA_BUFFER;
                     }
                     else
@@ -173,11 +173,11 @@ void Server::event_loop(SSL *quic_listener, int socket_fd)
             poll_timeout = set_poll();
             poll_num += work_cgi;
 
-            if (poll_timeout < 0)
+            if ((poll_timeout < 0) || (poll_timeout >1000))
             {
                 fprintf(stderr, "[%s]!!!!!!!!!!<%s:%d> 0x%02X, timeout=%d, poll_num=%d, work_cgi=%d\n", log_time().c_str(), __func__, __LINE__, poll_fd[0].events, poll_timeout, poll_num, work_cgi);
                 poll_timeout = 1000;
-            }            
+            }
         }
         else
         {
@@ -223,7 +223,7 @@ void Server::event_loop(SSL *quic_listener, int socket_fd)
                     if ((now - s->cgi.timer) > conf->TimeoutCGI)
                     {
                         fprintf(stderr, "[%u/%u]<%s:%d>**** cgi: timeout %d sec\n", s->num_conn, s->num_stream, __func__, __LINE__, (int)(now - s->cgi.timer));
-                        create_error_message(s, RS504, "504 Gateway Time-out");
+                        create_error_message(s, RS504, "<h1>504 Gateway Time-out</h1>");
                         s->status = SEND_HEADERS;
                         s->source_data = FROM_DATA_BUFFER;
                     }
@@ -247,10 +247,8 @@ void Server::event_loop(SSL *quic_listener, int socket_fd)
                 new_conn->ssl_conn = ssl_conn;
                 new_conn->quic_listener = quic_listener;
                 new_conn->num_conn = ++num_conn;
-                string create_time = log_time();
-                print_err(new_conn, "SSL_accept_connection(): OK, events=0x%02X/0x%02X\n", poll_fd[0].events, poll_fd[0].revents);
                 print_err(new_conn, "========= Create new Connect =========\n");
-                fprintf(stdout, "[%s] ========= Create new Connect [%u] =========\n", create_time.c_str(), num_conn);
+                fprintf(stdout, "[%s] ========= Create new Connect [%u] =========\n", log_time().c_str(), num_conn);
                 new_conn->conn_timer = time(NULL);
                 add_to_list(new_conn);
             }
@@ -327,7 +325,7 @@ void Server::connect_handler()
             {
                 int err = SSL_get_error(c->ssl_conn, ret);
                 printf("[%u]<%s:%d> Error SSL_shutdown(): %s\n", c->num_conn, __func__, __LINE__, ssl_strerror(err));
-                print_err(c, "<%s:%d> Error SSL_shutdown(): %s\n", __func__, __LINE__, ssl_strerror(err));
+                //print_err(c, "<%s:%d> Error SSL_shutdown(): %s\n", __func__, __LINE__, ssl_strerror(err));
                 if (err == SSL_ERROR_WANT_READ)
                     print_err(c, "<%s:%d> Error SSL_shutdown(): SSL_ERROR_WANT_READ\n", __func__, __LINE__);
                 else if (err == SSL_ERROR_WANT_WRITE)
@@ -349,14 +347,14 @@ void Server::connect_handler()
         {
             if (SSL_get_state(c->ssl_conn) == TLS_ST_OK)
             {
-                print_err(c, "<%s:%d> SSL_get_state()=TLS_ST_OK\n", __func__, __LINE__);
+                //print_err(c, "<%s:%d> SSL_get_state()=TLS_ST_OK\n", __func__, __LINE__);
                 c->conn_timer = now;
                 c->status = CONNECT_OK;
                 // SSL_INCOMING_STREAM_POLICY_AUTO     create 1 stream
                 // SSL_INCOMING_STREAM_POLICY_ACCEPT   create > 1 streams
                 // SSL_INCOMING_STREAM_POLICY_REJECT   create 0 stream
-                int err = SSL_set_incoming_stream_policy(c->ssl_conn, SSL_INCOMING_STREAM_POLICY_ACCEPT, 123);
-                print_err(c, "<%s:%d> SSL_set_incoming_stream_policy()=%d\n", __func__, __LINE__, err);
+                /*int err =*/ SSL_set_incoming_stream_policy(c->ssl_conn, SSL_INCOMING_STREAM_POLICY_ACCEPT, 123);
+                //print_err(c, "<%s:%d> SSL_set_incoming_stream_policy()=%d\n", __func__, __LINE__, err);
             }
             else
             {
@@ -458,8 +456,9 @@ int Server::stream_handler(Connect *c, Stream *s)
                 }
                 else
                 {
-                    fprintf(stderr, "[%u/%u] frame_type: %s\n", s->num_conn, s->num_stream, get_str_frame_type(s->frame_type));
+                    fprintf(stderr, "[%u/%u] Error frame_type: %s\n", s->num_conn, s->num_stream, get_str_frame_type(s->frame_type));
                     hex_print_stderr(__func__, __LINE__, buf, ret);
+                    return -1;
                 }
             }
             else if (ret < 0)
@@ -480,7 +479,7 @@ int Server::stream_handler(Connect *c, Stream *s)
                 int ret = cgi_parse_headers(c, s, true);
                 if (ret < 0)
                 {
-                    create_error_message(s, 500, "500 Internal Server Error");
+                    create_error_message(s, 500, "<h1>500 Internal Server Error</h1>");
                     s->status = SEND_HEADERS;
                     s->source_data = FROM_DATA_BUFFER;
                 }
@@ -510,13 +509,14 @@ int Server::stream_handler(Connect *c, Stream *s)
                 c->wait_write = true;
                 return 0;
             }
+
             fprintf(stderr, "[%u/%u]<%s:%d> Error write HEADERS\n", s->num_conn, s->num_stream, __func__, __LINE__);
             close_stream(c, s);
             return 0;
         }
         else if (ret > 0)
         {
-            fprintf(stderr, "[%u/%u]<%s:%d> send HEADERS %d bytes\n", s->num_conn, s->num_stream, __func__, __LINE__, ret);
+            //fprintf(stderr, "[%u/%u]<%s:%d> send HEADERS %d bytes\n", s->num_conn, s->num_stream, __func__, __LINE__, ret);
             parse_server_headers(&s->headers, 5);
             s->status = SEND_DATA;
         }
@@ -541,7 +541,8 @@ int Server::stream_handler(Connect *c, Stream *s)
                         if (ret < 0)
                             fprintf(stderr, "<%s:%d> Error read(): %s\n", __func__, __LINE__, strerror(errno));
                         ret = SSL_stream_conclude(s->ssl, 0);
-                        print_err(c, "[%u]<%s:%d> [FROM_FILE] SSL_stream_conclude()=%d, send=%lld\n", s->num_stream, __func__, __LINE__, ret, s->data_send);
+                        //print_err(c, "[%u]<%s:%d>[FROM_FILE] SSL_stream_conclude()=%d, send=%lld\n", s->num_stream, __func__, __LINE__, ret, s->data_send);
+                        //printf("[%u/%u]<%s:%d>[FROM_FILE] SSL_stream_conclude()=%d, send=%lld\n", s->num_conn, s->num_stream, __func__, __LINE__, ret, s->data_send);
                         s->status = STREAM_CLOSE;
                         s->stream_timer = time(NULL);
                         close(s->fd);
@@ -557,8 +558,9 @@ int Server::stream_handler(Connect *c, Stream *s)
                 }
                 else
                 {
-                    int ret = SSL_stream_conclude(s->ssl, 0);
-                    print_err("[%u/%u]<%s:%d>[FROM_FILE] SSL_stream_conclude()=%d, send=%lld\n", s->num_conn, s->num_stream, __func__, __LINE__, ret, s->data_send);
+                    /*int ret =*/ SSL_stream_conclude(s->ssl, 0);
+                    //print_err("[%u/%u]<%s:%d>[FROM_FILE] SSL_stream_conclude()=%d, send=%lld\n", s->num_conn, s->num_stream, __func__, __LINE__, ret, s->data_send);
+                    //printf("[%u/%u]<%s:%d>[FROM_FILE] SSL_stream_conclude()=%d, send=%lld\n", s->num_conn, s->num_stream, __func__, __LINE__, ret, s->data_send);
                     s->status = STREAM_CLOSE;
                     s->stream_timer = time(NULL);
                     if (s->fd > 0)
@@ -583,8 +585,9 @@ int Server::stream_handler(Connect *c, Stream *s)
                 }
                 else
                 {
-                    int ret = SSL_stream_conclude(s->ssl, 0);
-                    print_err("[%u/%u]<%s:%d> [FROM_DATA_BUFFER] SSL_stream_conclude()=%d, send=%lld\n", s->num_conn, s->num_stream, __func__, __LINE__, ret, s->data_send);
+                    /*int ret =*/ SSL_stream_conclude(s->ssl, 0);
+                    //print_err("[%u/%u]<%s:%d>[FROM_DATA_BUFFER] SSL_stream_conclude()=%d, send=%lld\n", s->num_conn, s->num_stream, __func__, __LINE__, ret, s->data_send);
+                    //printf("[%u/%u]<%s:%d>[FROM_DATA_BUFFER] SSL_stream_conclude()=%d, send=%lld\n", s->num_conn, s->num_stream, __func__, __LINE__, ret, s->data_send);
                     s->status = STREAM_CLOSE;
                     s->stream_timer = time(NULL);
                     s->buf.init();
@@ -611,8 +614,9 @@ int Server::stream_handler(Connect *c, Stream *s)
                 {
                     if (s->cgi.end)
                     {
-                        int ret = SSL_stream_conclude(s->ssl, 0);
-                        print_err("[%u/%u]<%s:%d> [DYN_PAGE] SSL_stream_conclude()=%d, send=%lld\n", s->num_conn, s->num_stream, __func__, __LINE__, ret, s->data_send);
+                        /*int ret =*/ SSL_stream_conclude(s->ssl, 0);
+                        //print_err("[%u/%u]<%s:%d>[DYN_PAGE] SSL_stream_conclude()=%d, send=%lld\n", s->num_conn, s->num_stream, __func__, __LINE__, ret, s->data_send);
+                        //printf("[%u/%u]<%s:%d>[DYN_PAGE] SSL_stream_conclude()=%d, send=%lld\n", s->num_conn, s->num_stream, __func__, __LINE__, ret, s->data_send);
                         s->status = STREAM_CLOSE;
                         s->stream_timer = time(NULL);
                     }
@@ -650,7 +654,8 @@ int Server::stream_handler(Connect *c, Stream *s)
                 if (s->file_size <= 0)
                 {
                     ret = SSL_stream_conclude(s->ssl, 0);
-                    print_err("[%u/%u]<%s:%d>[FROM_FILE] SSL_stream_conclude()=%d, send=%lld\n", s->num_conn, s->num_stream, __func__, __LINE__, ret, s->data_send);
+                    //print_err("[%u/%u]<%s:%d>[FROM_FILE] SSL_stream_conclude()=%d, send=%lld\n", s->num_conn, s->num_stream, __func__, __LINE__, ret, s->data_send);
+                    //printf("[%u/%u]<%s:%d>[FROM_FILE] SSL_stream_conclude()=%d, send=%lld\n", s->num_conn, s->num_stream, __func__, __LINE__, ret, s->data_send);
                     s->status = STREAM_CLOSE;
                     s->stream_timer = time(NULL);
                     close(s->fd);

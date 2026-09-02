@@ -18,7 +18,7 @@ OBJS = http3_server.o \
 	
 
 http3_server: $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $(OBJS) -lpthread -L/usr/local/lib/ -L/usr/local/lib64/ -lssl -lcrypto
+	$(CC) $(CFLAGS) -o $@ $(OBJS) -L/usr/local/lib/ -L/usr/local/lib64/ -lssl -lcrypto
 
 http3_server.o: http3_server.cpp $(DEPS)
 	$(CC) $(CFLAGS) -c http3_server.cpp -o $@

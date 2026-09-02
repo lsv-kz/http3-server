@@ -55,7 +55,7 @@ static int alpn_select_proto_cb(SSL *ssl, const unsigned char **out, unsigned ch
 {
     hex_print_stderr("client", __LINE__, in, inlen);
     unsigned int proto_alpn_len = sizeof(proto_alpn);
-    hex_print_stderr("server", __LINE__, proto_alpn, proto_alpn_len);
+    //hex_print_stderr("server", __LINE__, proto_alpn, proto_alpn_len);
     for ( unsigned int i = 0; i < proto_alpn_len; i += (unsigned int)(proto_alpn[i] + 1))
     {
         for (unsigned int j = 0; j < inlen; j += (unsigned int)(in[j] + 1))
@@ -87,11 +87,11 @@ int sni_callback(SSL *ssl, int *al, void *arg)
         return SSL_TLSEXT_ERR_OK;
     }
 
-    if (arg)
-        fprintf(stderr, "<%s:%d> servername from server: [%s]\n", __func__, __LINE__, (char*)arg);
-    else
+    if (arg == NULL)
         return SSL_TLSEXT_ERR_OK;
-return SSL_TLSEXT_ERR_OK;
+    else
+        fprintf(stderr, "<%s:%d> servername from server: [%s]\n", __func__, __LINE__, (char*)arg);
+
     char *s = (char*)arg;
     if (strcmp(servname, s) == 0)
         return SSL_TLSEXT_ERR_OK;
@@ -107,6 +107,8 @@ int configure_context(SSL_CTX *ctx)
         fprintf(stderr, "<%s:%d> Error loading certificates\n", __func__, __LINE__);
         return 1;
     }
+
+    SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, NULL);
 
     SSL_CTX_set_alpn_select_cb(ctx, alpn_select_proto_cb, NULL);
 
@@ -208,8 +210,7 @@ int ssl_write(SSL *ssl, const char *buf, int buf_size, int *err)
             fprintf(stderr, "<%s:%d> Error SSL_write(): SSL_ERROR_WANT_READ\n", __func__, __LINE__);
             return ERR_TRY_AGAIN;
         }
-        fprintf(stderr, "<%s:%d> Error SSL_write(%p, %p, %d)=%d: %s\n", __func__, __LINE__,
-                                ssl, buf, buf_size, ret, ssl_strerror(*err));
+        fprintf(stderr, "<%s:%d> Error SSL_write()=%d: %s\n", __func__, __LINE__, ret, ssl_strerror(*err));
         return -1;
     }
 

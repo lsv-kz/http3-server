@@ -14,10 +14,6 @@
 #include <poll.h>
 #include <sys/ioctl.h>
 
-#include <mutex>
-#include <thread>
-#include <condition_variable>
-
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
@@ -67,6 +63,7 @@ struct Config
 
 extern const Config* const conf;
 void kill_chld(pid_t pid);
+std::string log_time();
 //----------------------------------------------------------------------
 enum HTTP_METHOD
 {
@@ -149,7 +146,7 @@ struct Cgi
 
     ~Cgi()
     {
-        fprintf(stderr, "<%s:%d> pid=%d, send_post_data=%lld\n", __func__, __LINE__, pid, send_post_data);
+        //fprintf(stderr, "<%s:%d> pid=%d, send_post_data=%lld\n", __func__, __LINE__, pid, send_post_data);
         if (pid)
         {
             kill_chld(pid);
@@ -217,8 +214,8 @@ struct Stream
     
     ~Stream()
     {
-        fprintf(stdout, "[%u/%u~]<%s:%d> data=%lld, all_data=%lld, cgi.end=%d\n", num_conn, num_stream, __func__, __LINE__, data_send, all_data_send, cgi.end);
-        fprintf(stderr, "[%u/%u~]<%s:%d> data=%lld, all_data=%lld, cgi.end=%d\n", num_conn, num_stream, __func__, __LINE__, data_send, all_data_send, cgi.end);
+        //fprintf(stdout, "[%u/%u~]<%s:%d> data=%lld, all_data=%lld, cgi.end=%d\n", num_conn, num_stream, __func__, __LINE__, data_send, all_data_send, cgi.end);
+        //fprintf(stderr, "[%u/%u~]<%s:%d> data=%lld, all_data=%lld, cgi.end=%d\n", num_conn, num_stream, __func__, __LINE__, data_send, all_data_send, cgi.end);
         if (ssl)
         {
             SSL_free(ssl);
@@ -226,6 +223,8 @@ struct Stream
         }
     }
 };
+
+void print_log(Stream *s);
 
 struct Connect
 {
@@ -274,13 +273,15 @@ struct Connect
         if (!stream_start)
             stream_start = s;
         ++num_work_stream;
-fprintf(stderr, "[%u/%d]<%s:%d> Create Stream, work_stream=%d\n", num_conn, num_stream, __func__, __LINE__, num_work_stream);
-fprintf(stdout, "[%u/%d]<%s:%d> Create Stream, work_stream=%d\n", num_conn, num_stream, __func__, __LINE__, num_work_stream);
+//fprintf(stderr, "[%u/%d]<%s:%d> Create Stream, work_stream=%d\n", num_conn, num_stream, __func__, __LINE__, num_work_stream);
+//fprintf(stdout, "[%u/%d]<%s:%d> Create Stream, work_stream=%d\n", num_conn, num_stream, __func__, __LINE__, num_work_stream);
         return s;
     }
 
     void delete_stream(Stream *s)
     {
+        if (s->status >= SEND_HEADERS)
+            print_log(s);
         if (s->prev)
         s->prev->next = s->next;
         else
@@ -290,6 +291,7 @@ fprintf(stdout, "[%u/%d]<%s:%d> Create Stream, work_stream=%d\n", num_conn, num_
             s->next->prev = s->prev;
         else
             stream_end = s->prev;
+        fprintf(stderr, "<%s:%u> cgi.pid=%u, %d/%d\n", __func__, s->num_stream, s->cgi.pid, s->cgi.start, s->cgi.end);
         delete s;
         --num_work_stream;
     }
@@ -301,8 +303,8 @@ fprintf(stdout, "[%u/%d]<%s:%d> Create Stream, work_stream=%d\n", num_conn, num_
 
     ~Connect()
     {
-        fprintf(stderr, "[%u~]<%s:%d> size_send_data=%lld, size_send_frame_data=%lld, work_stream=%d\n", num_conn, __func__, __LINE__, size_send_data, size_send_frame_data, num_work_stream);
-        fprintf(stdout, "[%u~]<%s:%d> size_send_data=%lld, size_send_frame_data=%lld, work_stream=%d\n", num_conn, __func__, __LINE__, size_send_data, size_send_frame_data, num_work_stream);
+        fprintf(stderr, "[%s]-[%u~]<%s:%d> send_data=%lld, size_frames_data=%lld, work_stream=%d\n", log_time().c_str(), num_conn, __func__, __LINE__, size_send_data, size_send_frame_data, num_work_stream);
+        fprintf(stdout, "[%s]-[%u~]<%s:%d> send_data=%lld, size_frames_data=%lld, work_stream=%d\n", log_time().c_str(), num_conn, __func__, __LINE__, size_send_data, size_send_frame_data, num_work_stream);
         if (ctrl_ssl)
             SSL_free(ctrl_ssl);
         if (enc_ssl)
@@ -415,7 +417,6 @@ int status_to_index(Stream *s, int status);
 int parse_server_headers(BytesArray *ba, int n);
 //============================ util.cpp ================================
 std::string get_time();
-std::string log_time();
 long long file_size(const char *s);
 SOURCE_DATA get_source_data(const char *path);
 int strlcmp_case(const char *s1, const char *s2, int len);
@@ -434,7 +435,6 @@ void create_logfiles(const std::string& log_dir);
 void close_logs();
 void print_err(const char *format, ...);
 void print_err(Connect *con, const char *format, ...);
-void print_log(Connect *c, Stream *s);
 //============================= cgi.cpp ================================
 int cgi_create_proc(Connect *c, Stream *resp);
 int cgi_stdin(Stream *s);

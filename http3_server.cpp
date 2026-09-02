@@ -15,6 +15,8 @@ int main()
         << "\n PathPHP: " << conf->PathPHP
         << "\n LogDir: " << conf->LogDir
         << "\n ServerNameIndication: " << conf->ServerNameIndication
+        << "\n MaxAcceptConnections: " << conf->MaxAcceptConnections
+        << "\n MaxStreams: " << conf->MaxStreams
         << "\n TimeOut: " << conf->TimeOut
         << "\n MaxCgiProc: " << conf->MaxCgiProc
         << "\n TimeoutCGI: " << conf->TimeoutCGI
@@ -65,7 +67,7 @@ int main()
         return 1;
     }
 
-    quic_listener = SSL_new_listener(ctx, 0); 
+    quic_listener = SSL_new_listener(ctx, 0);
     if (!quic_listener)
     {
         fprintf(stderr, "<%s:%d> Error SSL_new_listener()\n", __func__, __LINE__);

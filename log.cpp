@@ -3,7 +3,6 @@
 using namespace std;
 
 static int flog = STDOUT_FILENO, flog_err = STDERR_FILENO;
-static mutex mtxLog;
 static unsigned int num_log_records = 0, num_logerr_records = 0;
 
 static time_t create_time;
@@ -93,17 +92,15 @@ void print_err(const char *format, ...)
     if (n >= (int)sizeof(buf))
         str.strcat("--- overflow ---\n");
 
-mtxLog.lock();
     write(flog_err, str.ptr(), str.size());
     num_logerr_records++;
-    if (num_logerr_records > 500000)
+    if (num_logerr_records > 50000)
     {
         time_t t = time(NULL);
         if ((t - create_time) <  300)
         {
             close(flog_err);
             flog_err = STDERR_FILENO;
-            exit(1);
         }
         else
             create_time = time(NULL);
@@ -111,7 +108,6 @@ mtxLog.lock();
         create_error_logfile(conf->LogDir);
         num_logerr_records = 0;
     }
-mtxLog.unlock();
 }
 //======================================================================
 void print_err(Connect *con, const char *format, ...)
@@ -141,17 +137,15 @@ void print_err(Connect *con, const char *format, ...)
     if (n >= (int)sizeof(buf))
         str.strcat("--- overflow ---\n");
 
-mtxLog.lock();
     write(flog_err, str.ptr(), str.size());
     num_logerr_records++;
-    if (num_logerr_records > 500000)
+    if (num_logerr_records > 50000)
     {
         time_t t = time(NULL);
         if ((t - create_time) <  300)
         {
             close(flog_err);
             flog_err = STDERR_FILENO;
-            exit(1);
         }
         else
             create_time = time(NULL);
@@ -159,12 +153,11 @@ mtxLog.lock();
         create_error_logfile(conf->LogDir);
         num_logerr_records = 0;
     }
-mtxLog.unlock();
 }
 //======================================================================
-void print_log(Connect *c, Stream *s)
+void print_log(Stream *s)
 {
-    if (!c || !s)
+    if (!s)
         return;
     BytesArray str;
     str.reserve(1024);
@@ -218,7 +211,6 @@ void print_log(Connect *c, Stream *s)
     str.cat_int(s->id);
     str.ncat(" \n", 2);
 
-mtxLog.lock();
     write(flog, str.ptr(), str.size());
     num_log_records++;
     if (num_log_records > 500000)
@@ -227,7 +219,6 @@ mtxLog.lock();
         create_logfile(conf->LogDir);
         num_log_records = 0;
     }
-mtxLog.unlock();
 }
 //======================================================================
 void create_logfiles(const string& log_dir)
