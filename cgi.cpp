@@ -46,12 +46,12 @@ int cgi_fork(Connect *c, Stream *s, int* serv_cgi, int* cgi_serv)
 {
     struct stat st;
 
-    if (s->cgi.cgi_type == CGI)
+    if (s->cgi.type == CGI)
     {
         s->cgi.path = conf->ScriptDir;
         s->cgi.path += get_script_name(s->decode_path.c_str());
     }
-    else if (s->cgi.cgi_type == PHPCGI)
+    else if (s->cgi.type == PHPCGI)
     {
         s->cgi.path = conf->DocumentRoot;
         s->cgi.path += s->decode_path;
@@ -109,7 +109,7 @@ int cgi_fork(Connect *c, Stream *s, int* serv_cgi, int* cgi_serv)
             cgi_serv[1] = -1;
         }
 
-        if (s->cgi.cgi_type == PHPCGI)
+        if (s->cgi.type == PHPCGI)
             setenv("REDIRECT_STATUS", "true", 1);
         setenv("SERVER_SOFTWARE", conf->ServerSoftware.c_str(), 1);
         setenv("GATEWAY_INTERFACE", "CGI/1.1", 1);
@@ -140,7 +140,7 @@ int cgi_fork(Connect *c, Stream *s, int* serv_cgi, int* cgi_serv)
         if (s->query_string.size())
             setenv("QUERY_STRING", s->query_string.c_str(), 1);
 
-        if (s->cgi.cgi_type == CGI)
+        if (s->cgi.type == CGI)
         {
             if (chdir(conf->ScriptDir.c_str()))
             {
@@ -152,7 +152,7 @@ int cgi_fork(Connect *c, Stream *s, int* serv_cgi, int* cgi_serv)
             print_err("<%s:%d> Error execl(%s, %s): %s\n", __func__, __LINE__,
                         get_script_name(s->decode_path.c_str()) + 1, base_name(s->decode_path.c_str()), strerror(errno));
         }
-        else if (s->cgi.cgi_type == PHPCGI)
+        else if (s->cgi.type == PHPCGI)
         {
             execl(conf->PathPHP.c_str(), base_name(conf->PathPHP.c_str()), NULL);
             print_err("<%s:%d> Error execl(%s, %s): %s\n", __func__, __LINE__,
@@ -268,11 +268,11 @@ int cgi_create_proc(Connect *c, Stream *s)
     return 0;
 }
 //======================================================================
-int cgi_stdin(Stream *s)
+int cgi_stdin(Stream *s, int fd)
 {
     if (s->buf.size())
     {
-        int ret = write(s->cgi.to_script, s->buf.ptr_remain(), s->buf.size_remain());
+        int ret = write(fd, s->buf.ptr_remain(), s->buf.size_remain());
 //fprintf(stderr, "[%s]<%s:%d> write to script: %d\n", log_time().c_str(), __func__, __LINE__, ret);
         if (ret > 0)
         {
@@ -303,10 +303,10 @@ int cgi_stdin(Stream *s)
     return 0;
 }
 //======================================================================
-int cgi_stdout(Stream *s)
+int cgi_stdout(Stream *s, int fd)
 {
     char buf[16000];
-    int ret = read(s->cgi.from_script, buf, sizeof(buf) - 1);
+    int ret = read(fd, buf, sizeof(buf) - 1);
 //fprintf(stderr, "[%s]<%s:%d> read from script: %d\n", log_time().c_str(), __func__, __LINE__, ret);
     if (ret > 0)
     {

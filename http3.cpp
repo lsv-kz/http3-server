@@ -268,10 +268,9 @@ int Server::create_response(Connect *c, Stream *s)
         s->status = SEND_HEADERS;
         s->source_data = FROM_DATA_BUFFER;
         */
-        all_cgi++;
+        s->set_cgi();
         s->source_data = DYN_PAGE;
-        s->cgi.cgi_type = CGI;
-        s->resp_status = RS200;
+        s->cgi.type = CGI;
         if ((s->httpMethod == M_POST) && (s->post_content_len > 0))
             s->status = READ_DATA;
         else
@@ -280,20 +279,19 @@ int Server::create_response(Connect *c, Stream *s)
     }
     else if (strstr(s->decode_path.c_str(), ".php"))
     {
-        all_cgi++;
+        s->set_cgi();
         s->source_data = DYN_PAGE;
-        s->buf.init();
         if ((s->httpMethod == M_POST) && (s->post_content_len > 0))
             s->status = READ_DATA;
         else
             s->status = SEND_HEADERS;
         if (conf->UsePHP == "php-cgi")
         {
-            s->cgi.cgi_type = PHPCGI;
+            s->cgi.type = PHPCGI;
         }
         /*else if (conf->UsePHP == "php-fpm")
         {
-            s->cgi.cgi_type = PHPFPM;
+            s->cgi.type = PHPFPM;
         }*/
         else
         {

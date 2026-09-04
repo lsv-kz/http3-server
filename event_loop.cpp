@@ -1,7 +1,39 @@
 #include "http3_server.h"
 
 using namespace std;
-
+//======================================================================
+static int all_cgi = 0;
+static int work_cgi = 0;
+//======================================================================
+void inc_all_cgi()
+{
+    all_cgi++;
+}
+//======================================================================
+void dec_all_cgi()
+{
+    all_cgi--;
+}
+//======================================================================
+void inc_work_cgi()
+{
+    work_cgi++;
+}
+//======================================================================
+void dec_work_cgi()
+{
+    work_cgi--;
+}
+//======================================================================
+int get_all_cgi()
+{
+    return all_cgi;
+}
+//======================================================================
+int get_work_cgi()
+{
+    return work_cgi;
+}
 //======================================================================
 void Server::add_to_list(Connect *c)
 {
@@ -38,8 +70,7 @@ void Server::close_stream(Connect *c, Stream *s)
 {
     if (s->cgi.pid)
     {
-        --all_cgi;
-        fprintf(stderr, "<%s:%u> all_cgi=%d\n", __func__, s->num_stream, all_cgi);
+        //fprintf(stderr, "<%s:%u> all_cgi=%d\n", __func__, s->num_stream, all_cgi);
     }
 
     c->delete_stream(s);
@@ -68,7 +99,7 @@ int get_poll_timeout(SSL *quic_listener)
 int Server::set_poll()
 {
     int min_timeout = 100;
-    work_cgi = 0;
+    cgi_stream_size = 0;
     Connect *c = list_start, *c_next = NULL;
     for ( ; c; c = c_next)
     {
@@ -94,9 +125,9 @@ int Server::set_poll()
                     min_timeout = 0;
             }
 
-            if ((s->source_data == DYN_PAGE) && (s->cgi.end == false) && (work_cgi < conf->MaxCgiProc))
+            if ((s->source_data == DYN_PAGE) && (s->cgi.end == false))
             {
-                if (s->cgi.start == false)
+                if ((s->cgi.start == false) && (work_cgi < conf->MaxCgiProc))
                 {
                     int ret = cgi_create_proc(c, s);
                     if (ret < 0)
@@ -108,25 +139,27 @@ int Server::set_poll()
                     {
                         s->cgi.start = true;
                         s->cgi.timer = now;
+                        work_cgi++;
                     }
                 }
-                else
+                else if (s->cgi.start)
                 {
                     if (s->status == READ_DATA)
                     {
-                        poll_fd[1 + work_cgi].fd = s->cgi.to_script;
-                        poll_fd[1 + work_cgi].events = POLLOUT;
+                        poll_fd[1 + cgi_stream_size].fd = s->cgi.to_script;
+                        poll_fd[1 + cgi_stream_size].events = POLLOUT;
                     }
                     else
                     {
-                        poll_fd[1 + work_cgi].fd = s->cgi.from_script;
-                        poll_fd[1 + work_cgi].events = POLLIN;
+                        poll_fd[1 + cgi_stream_size].fd = s->cgi.from_script;
+                        poll_fd[1 + cgi_stream_size].events = POLLIN;
                     }
-                    cgi_stream[work_cgi++] = s;
+
+                    cgi_stream[cgi_stream_size++] = s;
                 }
             }
 
-            if ((min_timeout == 0) && ((work_cgi >= conf->MaxCgiProc) || (all_cgi == work_cgi)))
+            if ((min_timeout == 0) && ((cgi_stream_size >= conf->MaxCgiProc) || (all_cgi == cgi_stream_size)))
                 return min_timeout;
         }
     }
@@ -136,9 +169,6 @@ int Server::set_poll()
 //======================================================================
 void Server::event_loop(SSL *quic_listener, int socket_fd)
 {
-    int poll_timeout = -1;
-    int poll_num = 1;
-
     poll_fd = new(nothrow) struct pollfd [1 + conf->MaxCgiProc];
     if (!poll_fd)
     {
@@ -158,6 +188,8 @@ void Server::event_loop(SSL *quic_listener, int socket_fd)
     poll_fd[0].fd = socket_fd;
 
     unsigned int num_conn = 0;
+    int poll_timeout = -1;
+    int poll_num = 0;
 
     bool run = true;
     for ( ; run; )
@@ -171,7 +203,7 @@ void Server::event_loop(SSL *quic_listener, int socket_fd)
         if (list_start)
         {
             poll_timeout = set_poll();
-            poll_num += work_cgi;
+            poll_num += cgi_stream_size;
 
             if ((poll_timeout < 0) || (poll_timeout >1000))
             {
@@ -196,25 +228,25 @@ void Server::event_loop(SSL *quic_listener, int socket_fd)
             break;
         }
 
-        if (work_cgi > 0)
+        if (cgi_stream_size > 0)
         {
             time_t now = time(NULL);
-            for (int i = 0; i < work_cgi; i++)
+            for (int i = 0; i < cgi_stream_size; i++)
             {
                 Stream *s = cgi_stream[i];
                 if (poll_fd[1 + i].revents)
                 {
                     if (poll_fd[1 + i].revents & POLLIN)
                     {
-                        cgi_stdout(s);
+                        cgi_stdout(s, s->cgi.from_script);
                     }
                     else if (poll_fd[1 + i].revents & POLLOUT)
                     {
-                        cgi_stdin(s);
+                        cgi_stdin(s, s->cgi.to_script);
                     }
                     else
                     {
-                        fprintf(stderr, "[%u/%u]<%s:%d>**** cgi: revents=0x%02X\n", s->num_conn, s->num_stream, __func__, __LINE__, poll_fd[1 + i].revents);
+                        //fprintf(stderr, "[%u/%u]<%s:%d> CGI: revents=0x%02X\n", s->num_conn, s->num_stream, __func__, __LINE__, poll_fd[1 + i].revents);
                         s->cgi.end = true;
                     }
                 }
@@ -386,12 +418,14 @@ void Server::connect_handler()
         }
         else
             continue;
-        
+
+        if (c->stream_start)
+            c->conn_timer = now;
+
         Stream *s = c->stream_start, *next = NULL;
         for ( ; s; s = next)
         {
             next = s->next;
-            c->conn_timer = now;
             s->wait_write = false;
             if (stream_handler(c, s) < 0)
                 break;
@@ -405,6 +439,16 @@ int Server::stream_handler(Connect *c, Stream *s)
     {
         close_stream(c, s);
         return 0;
+    }
+
+    time_t now = time(NULL);
+    if ((now - s->stream_timer) >= conf->TimeOut)
+    {
+        print_err(c, "<%s:%d> Stream Timeout=%d\n", __func__, __LINE__, (int)(now - s->stream_timer));
+        printf("[%u]<%s:%d> Stream Timeout=%d\n", c->num_conn, __func__, __LINE__, (int)(now - s->stream_timer));
+        close_stream(c, s);
+        connect_shutdown(c, __func__, __LINE__);
+        return -1;
     }
 
     int pend = SSL_pending(s->ssl);
@@ -423,6 +467,10 @@ int Server::stream_handler(Connect *c, Stream *s)
                 print_err(c, "[%u]<%s:%d> read_head_frame()=0\n", s->num_stream, __func__, __LINE__);
                 return 0;
             }
+            else
+            {
+                s->stream_timer = time(NULL);
+            }
         }
 
         if (s->frame_size)
@@ -435,6 +483,7 @@ int Server::stream_handler(Connect *c, Stream *s)
             if (ret > 0)
             {
                 //fprintf(stderr, "[%u/%u]--- read from client %d/%d ---\n", s->num_conn, s->num_stream, ret, nread);
+                s->stream_timer = time(NULL);
                 if (s->frame_type == HEADERS)
                 {
                 //hex_print_stderr(__func__, __LINE__, buf, ret);
@@ -482,6 +531,7 @@ int Server::stream_handler(Connect *c, Stream *s)
                     create_error_message(s, 500, "<h1>500 Internal Server Error</h1>");
                     s->status = SEND_HEADERS;
                     s->source_data = FROM_DATA_BUFFER;
+                    s->stream_timer = time(NULL);
                 }
                 else if (ret == 0)
                 {
@@ -519,6 +569,7 @@ int Server::stream_handler(Connect *c, Stream *s)
             //fprintf(stderr, "[%u/%u]<%s:%d> send HEADERS %d bytes\n", s->num_conn, s->num_stream, __func__, __LINE__, ret);
             parse_server_headers(&s->headers, 5);
             s->status = SEND_DATA;
+            s->stream_timer = time(NULL);
         }
     }
 
@@ -642,6 +693,7 @@ int Server::stream_handler(Connect *c, Stream *s)
         else if (ret > 0)
         {
     //fprintf(stderr, "[%u/%u]<%s:%d> send DATA %d bytes\n", s->num_conn, s->num_stream, __func__, __LINE__, ret);                
+            s->stream_timer = time(NULL);
             s->data.init();
 
             s->all_data_send += ret;

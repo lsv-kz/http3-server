@@ -64,6 +64,14 @@ struct Config
 extern const Config* const conf;
 void kill_chld(pid_t pid);
 std::string log_time();
+
+void inc_all_cgi();
+void dec_all_cgi();
+int get_all_cgi();
+
+void inc_work_cgi();
+void dec_work_cgi();
+int get_work_cgi();
 //----------------------------------------------------------------------
 enum HTTP_METHOD
 {
@@ -128,8 +136,9 @@ enum CGI_TYPE { CGI, PHPCGI, PHPFPM, FASTCGI, SCGI, };
 //----------------------------------------------------------------------
 struct Cgi
 {
-    CGI_TYPE cgi_type;
+    CGI_TYPE type;
 
+    bool cgi = false;
     bool start = false;
     bool end = false;
 
@@ -151,6 +160,11 @@ struct Cgi
         {
             kill_chld(pid);
         }
+
+        if (start)
+            dec_work_cgi();
+        if (cgi)
+            dec_all_cgi();
     }
 };
 
@@ -207,11 +221,21 @@ struct Stream
 
     Cgi cgi;
 
+    void set_cgi()
+    {
+        cgi.cgi = true;
+        inc_all_cgi();
+        buf.init();
+        resp_status = RS200;
+        cgi.timer = time(NULL);
+    }
+
     Stream()
     {
         status = READ_HEADERS;
+        stream_timer = time(NULL);
     }
-    
+
     ~Stream()
     {
         //fprintf(stdout, "[%u/%u~]<%s:%d> data=%lld, all_data=%lld, cgi.end=%d\n", num_conn, num_stream, __func__, __LINE__, data_send, all_data_send, cgi.end);
@@ -291,7 +315,7 @@ struct Connect
             s->next->prev = s->prev;
         else
             stream_end = s->prev;
-        fprintf(stderr, "<%s:%u> cgi.pid=%u, %d/%d\n", __func__, s->num_stream, s->cgi.pid, s->cgi.start, s->cgi.end);
+        //fprintf(stderr, "<%s:%u> cgi.pid=%u, %d/%d\n", __func__, s->num_stream, s->cgi.pid, s->cgi.start, s->cgi.end);
         delete s;
         --num_work_stream;
     }
@@ -333,7 +357,7 @@ struct Server
     Connect *list_end = NULL;
 
     Stream **cgi_stream;
-    int  all_cgi = 0, work_cgi = 0;
+    int cgi_stream_size = 0;
 
     struct pollfd *poll_fd = NULL;
 
@@ -367,7 +391,7 @@ struct Server
 
     ~Server()
     {
-        fprintf(stderr, "~<%s:%d> all_cgi=%d\n", __func__, __LINE__, all_cgi);
+        fprintf(stderr, "~<%s:%d> all_cgi=%d\n", __func__, __LINE__, get_all_cgi());
         if (list_start)
             close_connections();
 
@@ -437,8 +461,8 @@ void print_err(const char *format, ...);
 void print_err(Connect *con, const char *format, ...);
 //============================= cgi.cpp ================================
 int cgi_create_proc(Connect *c, Stream *resp);
-int cgi_stdin(Stream *s);
-int cgi_stdout(Stream *s);
+int cgi_stdin(Stream *s, int fd);
+int cgi_stdout(Stream *s, int fd);
 //======================================================================
 
 #endif
