@@ -9,12 +9,14 @@ OBJS = http3_server.o \
 	event_loop.o \
 	index.o \
 	cgi.o \
+	scgi.o \
 	http3.o \
 	ssl.o \
 	util.o \
 	config.o \
 	log.o \
 	percent_coding.o \
+	socket.o \
 	
 
 http3_server: $(OBJS)
@@ -35,6 +37,9 @@ http3.o: http3.cpp $(DEPS)
 ssl.o: ssl.cpp $(DEPS)
 	$(CC) $(CFLAGS) -c ssl.cpp -o $@
 
+socket.o: socket.cpp $(DEPS)
+	$(CC) $(CFLAGS) -c socket.cpp -o $@
+
 util.o: util.cpp $(DEPS)
 	$(CC) $(CFLAGS) -c util.cpp -o $@
 
@@ -46,6 +51,9 @@ log.o: log.cpp $(DEPS)
 
 cgi.o: cgi.cpp $(DEPS)
 	$(CC) $(CFLAGS) -c cgi.cpp -o $@
+
+scgi.o: scgi.cpp $(DEPS)
+	$(CC) $(CFLAGS) -c scgi.cpp -o $@
 
 percent_coding.o: percent_coding.cpp $(DEPS)
 	$(CC) $(CFLAGS) -c percent_coding.cpp -o $@

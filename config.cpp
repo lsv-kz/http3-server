@@ -316,7 +316,7 @@ static int is_number(const char *s)
     return n;
 }
 //======================================================================
-/*static int find_bracket(FILE *f, char c)
+static int find_bracket(FILE *f, char c)
 {
     if (bracket)
     {
@@ -355,7 +355,33 @@ static int is_number(const char *s)
     }
 
     return 0;
-}*/
+}
+//======================================================================
+static void create_fcgi_list(fcgi_list_addr **l, const char *s1, const char *s2, CGI_TYPE type)
+{
+    if (l == NULL)
+    {
+        fprintf(stderr, "<%s:%d> Error pointer = NULL\n", __func__, __LINE__);
+        exit(errno);
+    }
+
+    fcgi_list_addr *t;
+    try
+    {
+        t = new fcgi_list_addr;
+    }
+    catch (...)
+    {
+        fprintf(stderr, "<%s:%d> Error new(): %s\n", __func__, __LINE__, strerror(errno));
+        exit(errno);
+    }
+
+    t->script_name = s1;
+    t->addr = s2;
+    t->type = type;
+    t->next = *l;
+    *l = t;
+}
 //======================================================================
 static int read_conf_file(FILE *fconf)
 {
@@ -443,6 +469,36 @@ static int read_conf_file(FILE *fconf)
                 return -1;
             }
         }
+        else if (n == 1)
+        {
+            if (!strcmp(str, "ServerSoftware"))
+                c.ServerSoftware = "";
+            else if (!strcmp(str, "scgi"))
+            {
+                if (find_bracket(fconf, '{') == 0)
+                {
+                    fprintf(stderr, "<%s:%d> Error not found \"{\", line <%d>\n", __func__, __LINE__, line_);
+                    return -1;
+                }
+
+                while (getLine(fconf, str, sizeof(str) - 1) == 2)
+                {
+                    char s1[512], s2[512];
+                    if (sscanf(str, "%s %s", s1, s2) != 2)
+                    {
+                        fprintf(stderr, "<%s:%d> Error sscanf(%s) != 2\n", __func__, __LINE__, str);
+                        return -1;
+                    }
+                    create_fcgi_list(&c.fcgi_list, s1, s2, SCGI);
+                }
+
+                if (strcmp(str, "}"))
+                {
+                    fprintf(stderr, "<%s:%d> Error not found \"}\", line <%d>\n", __func__, __LINE__, line_);
+                    return -1;
+                }
+            }
+        }
         else
         {
             fprintf(stderr, "<%s:%d> Error read config file: [%s], line <%d>\n", __func__, __LINE__, str, line_);
@@ -493,13 +549,3 @@ int read_conf_file(const char *path_conf)
 
     return read_conf_file(fconf);
 }
-
-
-
-
-
-
-
-
-
-

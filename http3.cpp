@@ -201,11 +201,13 @@ int parse_headers(Stream *s)
         }
         else if (name == "range")
         {
-            print_err("<%s:%d> [%s: %s]\n", __func__, __LINE__, name.c_str(), val.c_str());
+            //print_err("<%s:%d> [%s: %s]\n", __func__, __LINE__, name.c_str(), val.c_str());
             s->range = val;
         }
         else if (name == ":path")
+        {
             s->raw_path = val;
+        }
         else if (name == "user-agent")
         {
             s->user_agent = val;
@@ -225,8 +227,6 @@ int Server::create_response(Connect *c, Stream *s)
     if (ret < 0)
     {
         create_error_message(s, RS500, "<h1>500 Internal Server Error</h1>");
-        s->status = SEND_HEADERS;
-        s->source_data = FROM_DATA_BUFFER;
         return -1;
     }
 
@@ -251,8 +251,6 @@ int Server::create_response(Connect *c, Stream *s)
     {
         print_err("<%s:%d> Error clean_path(%s)\n", __func__, __LINE__, s->decode_path.c_str());
         create_error_message(s, RS400, "<h1>400 Bad Request</h1>");
-        s->status = SEND_HEADERS;
-        s->source_data = FROM_DATA_BUFFER;
         return 0;
     }
 
@@ -265,8 +263,6 @@ int Server::create_response(Connect *c, Stream *s)
     {/*
         fprintf(stderr, "<%s:%d> Error: CGI is not supported\n", __func__, __LINE__);
         create_error_message(s, 404, "<h1>404 Not Found (CGI is not supported)</h1>");
-        s->status = SEND_HEADERS;
-        s->source_data = FROM_DATA_BUFFER;
         */
         s->set_cgi();
         s->source_data = DYN_PAGE;
@@ -296,8 +292,6 @@ int Server::create_response(Connect *c, Stream *s)
         else
         {
             create_error_message(s, RS404, "<h1>404 Not Found</h1>");
-            s->status = SEND_HEADERS;
-            s->source_data = FROM_DATA_BUFFER;
         }
         return 0;
     }
@@ -311,8 +305,6 @@ int Server::create_response(Connect *c, Stream *s)
         {
             print_err("<%s:%d> Error file_size(%s)\n", __func__, __LINE__, s->full_path.c_str());
             create_error_message(s, RS500, "<h1>500 Internal Server Error</h1>");
-            s->status = SEND_HEADERS;
-            s->source_data = FROM_DATA_BUFFER;
             return 0;
         }
 
@@ -323,8 +315,6 @@ int Server::create_response(Connect *c, Stream *s)
             {
                 print_err("<%s:%d> Error parse_range(%s)\n", __func__, __LINE__, s->range.c_str());
                 create_error_message(s, RS400, "<h1>400 Bad Request</h1>");
-                s->status = SEND_HEADERS;
-                s->source_data = FROM_DATA_BUFFER;
                 return 0;
             }
             else if (ret == 0)
@@ -372,8 +362,6 @@ int Server::create_response(Connect *c, Stream *s)
                 create_error_message(s, RS403, "<h1>403 Forbidden</h1>");
             else
                 create_error_message(s, RS404, "<h1>404 Not Found</h1>");
-            s->status = SEND_HEADERS;
-            s->source_data = FROM_DATA_BUFFER;
         }
 
         if (s->offset > 0)
@@ -404,8 +392,6 @@ int Server::create_response(Connect *c, Stream *s)
             if (err)
             {
                 create_error_message(s, RS500, "<h1>500 Internal Server Error</h1>");
-                s->status = SEND_HEADERS;
-                s->source_data = FROM_DATA_BUFFER;
                 return -1;
             }
             else
@@ -422,10 +408,11 @@ int Server::create_response(Connect *c, Stream *s)
     }
     else
     {
-        print_err("[%u/%u]<%s:%d> Error: 404 Not Found\n", s->num_conn, s->num_stream, __func__, __LINE__);
-        create_error_message(s, RS404, "<h1>404 Not Found</h1>");
-        s->status = SEND_HEADERS;
-        s->source_data = FROM_DATA_BUFFER;
+        if (is_cgi(s) == false)
+        {
+            print_err("[%u/%u]<%s:%d> Error: 404 Not Found\n", s->num_conn, s->num_stream, __func__, __LINE__);
+            create_error_message(s, RS404, "<h1>404 Not Found</h1>");
+        }
     }
 
     return 0;
@@ -751,6 +738,7 @@ int headers_create(Stream *s, int status, int size_bytes_num)
     s->headers.strcat(date.c_str());
 
     header_add(s, "count_connect", s->num_conn);
+    header_add(s, "count_streams", s->num_stream);
 
     header_add(s, 36, "no-cache, no-store, must-revalidate");// 36  "cache-control" ""
 
@@ -868,8 +856,10 @@ void create_error_message(Stream *s, int status, const char *msg)
     header_add(s, 92, conf->ServerSoftware.c_str());
     header_add(s, 44, "text/html");
     header_add(s, 4, s->buf.size()); // 4 "content-length"
-    header_add(s, "qwerty", "ggg");
     frame_set_size(&s->headers);
+    s->status = SEND_HEADERS;
+    s->source_data = FROM_DATA_BUFFER;
+    s->stream_timer = time(NULL);
 }
 //======================================================================
 int cgi_parse_headers(Connect* c, Stream *resp, bool lower_case)

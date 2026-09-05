@@ -5,28 +5,6 @@ using namespace std;
 unsigned char proto_alpn[] = { 2, 'h', '3' };
 const char *server_name = "localhost";
 //======================================================================
-int create_server_socket(const char *port)
-{
-    struct sockaddr_in addr;
-
-    int sock = socket(AF_INET, SOCK_DGRAM, 0);
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY;
-    addr.sin_port = htons(atoi(port));
-
-    int sock_opt = 1;
-    ioctl(sock, FIONBIO, &sock_opt);
-
-    if (bind(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0)
-    {
-        fprintf(stderr, "<%s:%d> Error bind(): %s\n", __func__, __LINE__, strerror(errno));
-        return -1;
-    }
-    
-    return sock;
-}
-//======================================================================
 SSL_CTX* InitCTX()
 {
     SSL_library_init();

@@ -155,6 +155,25 @@ const char *get_str_frame_type(HTTP3_FRAME_TYPE t)
     return "?";
 }
 //======================================================================
+const char *get_cgi_type(CGI_TYPE t)
+{
+    switch (t)
+    {
+        case CGI:
+            return "CGI";
+        case PHPCGI:
+            return "PHPCGI";
+        case PHPFPM:
+            return "PHPFPM";
+        case FASTCGI:
+            return "FASTCGI";
+        case SCGI:
+            return "SCGI";
+    }
+
+    return "?";
+}
+//======================================================================
 const char *get_content_type(const char *s)
 {
     const char *p = strrchr(s, '.');

@@ -273,7 +273,6 @@ int cgi_stdin(Stream *s, int fd)
     if (s->buf.size())
     {
         int ret = write(fd, s->buf.ptr_remain(), s->buf.size_remain());
-//fprintf(stderr, "[%s]<%s:%d> write to script: %d\n", log_time().c_str(), __func__, __LINE__, ret);
         if (ret > 0)
         {
             s->cgi.timer = time(NULL);
@@ -291,12 +290,10 @@ int cgi_stdin(Stream *s, int fd)
         }
         else
         {
-            fprintf(stderr, "[%u/%u]<%s:%d>**** cgi\n", s->num_conn, s->num_stream, __func__, __LINE__);
+            fprintf(stderr, "[%u/%u]<%s:%d> Error cgi_stdin()=%d\n", s->num_conn, s->num_stream, __func__, __LINE__, ret);
             s->cgi.end = true;
             create_error_message(s, RS502, "502 Bad Gateway");
-            s->status = SEND_HEADERS;
-            s->source_data = FROM_DATA_BUFFER;
-            return 1;
+            return -1;
         }
     }
 
@@ -307,20 +304,122 @@ int cgi_stdout(Stream *s, int fd)
 {
     char buf[16000];
     int ret = read(fd, buf, sizeof(buf) - 1);
-//fprintf(stderr, "[%s]<%s:%d> read from script: %d\n", log_time().c_str(), __func__, __LINE__, ret);
     if (ret > 0)
     {
         buf[ret] = 0;
-        //fprintf(stderr, "<%s:%d> --------- read from cgi --------\n%s\n", __func__, __LINE__, buf);
         s->buf.ncat(buf, ret);
         s->cgi.timer = time(NULL);
+        s->cgi.read_from_cgi += ret;
+    }
+    else if (ret == 0)
+    {
+        s->cgi.end = true;
     }
     else
     {
-        fprintf(stderr, "[%u/%u]<%s:%d>**** read from cgi %d\n", s->num_conn, s->num_stream, __func__, __LINE__, ret);
-        s->cgi.end = true;
-        return 1;
+        fprintf(stderr, "[%u/%u]<%s:%d> Error read from cgi: %s\n", s->num_conn, s->num_stream, __func__, __LINE__, strerror(errno));
+    }
+
+    return ret;
+}
+//======================================================================
+int Server::cgi_handler()
+{
+    time_t now = time(NULL);
+    for (int i = 0; i < cgi_stream_size; i++)
+    {
+        Stream *s = cgi_stream[i];
+        if (poll_fd[1 + i].revents)
+        {
+            if ((s->cgi.type == CGI) || (s->cgi.type == PHPCGI))
+            {
+                if (poll_fd[1 + i].revents == POLLOUT)
+                {
+                    cgi_stdin(s, s->cgi.to_script);
+                }
+                else if (poll_fd[1 + i].revents & POLLIN)
+                {
+                    cgi_stdout(s, s->cgi.from_script);
+                    if (poll_fd[1 + i].revents & POLLHUP)
+                        s->cgi.end = true;
+                }
+                else
+                {
+                    //fprintf(stderr, "[%u/%u]<%s:%d> CGI: %d/%d/%d, pid=%d, fd=%d, revents=0x%02X; %lld\n", s->num_conn, s->num_stream, 
+                    //        __func__, __LINE__, s->cgi.cgi, s->cgi.start, s->cgi.end, s->cgi.pid, poll_fd[1 + i].fd, poll_fd[1 + i].revents, s->cgi.read_from_cgi);
+                    s->cgi.end = true;
+                }
+            }
+            else if (s->cgi.type == SCGI)
+            {
+                if (poll_fd[1 + i].revents == POLLOUT)
+                {
+                    if (s->status == SEND_PARAM)
+                        scgi_send_param(s);
+                    else if (s->status == READ_DATA)
+                        cgi_stdin(s, s->cgi.fd);
+                }
+                else if (poll_fd[1 + i].revents & POLLIN)
+                {
+                    cgi_stdout(s, s->cgi.fd);
+                    if (poll_fd[1 + i].revents & POLLHUP)
+                        s->cgi.end = true;
+                }
+                else
+                {
+                    s->cgi.end = true;
+                }
+            }
+        }
+        else
+        {
+            if ((now - s->cgi.timer) >= conf->TimeoutCGI)
+            {
+                fprintf(stderr, "[%u/%u]<%s:%d> CGI timeout %d sec\n", s->num_conn, s->num_stream, __func__, __LINE__, (int)(now - s->cgi.timer));
+                create_error_message(s, RS504, "<h1>504 Gateway Time-out</h1>");
+            }
+        }
     }
 
     return 0;
+}
+//======================================================================
+bool is_cgi(Stream *s)
+{
+    const char *p = strrchr(s->decode_path.c_str(), '/');
+    if (!p)
+        return false;
+    fcgi_list_addr *i = conf->fcgi_list;
+    for (; i; i = i->next)
+    {
+        if (i->script_name[0] == '~')
+        {
+            if (!strcmp(p, i->script_name.c_str() + 1))
+                break;
+        }
+        else
+        {
+            if (s->decode_path == i->script_name)
+                break;
+        }
+    }
+
+    if (!i)
+        return false;
+
+    s->cgi.socket = &i->addr;
+    if (i->type == FASTCGI)
+        s->cgi.type = FASTCGI;
+    else if (i->type == SCGI)
+        s->cgi.type = SCGI;
+    else
+    {
+        s->source_data = NO_SOURCE;
+        return false;
+    }
+
+    s->source_data = DYN_PAGE;
+    s->resp_status = RS200;
+
+    return true;
 }

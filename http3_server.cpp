@@ -1,12 +1,14 @@
 #include "http3_server.h"
 
+using namespace std;
+
 const unsigned int array_reserve = 32;
 //======================================================================
 int main()
 {
     if (read_conf_file("server.conf"))
         return 1;
-    std::cout <<  " ServerAddr: " << conf->ServerAddr
+    cout <<  " ServerAddr: " << conf->ServerAddr
         << "\n ServerPort: " << conf->ServerPort
         << "\n ServerSoftware: " << conf->ServerSoftware
         << "\n DocumentRoot: " << conf->DocumentRoot
@@ -21,6 +23,13 @@ int main()
         << "\n MaxCgiProc: " << conf->MaxCgiProc
         << "\n TimeoutCGI: " << conf->TimeoutCGI
         << "\n ShowMediaFiles: " << conf->ShowMediaFiles << "\n";
+
+    cout << "   ------------- FastCGI/SCGI -------------\n";
+    fcgi_list_addr *i = conf->fcgi_list;
+    for (; i; i = i->next)
+    {
+        cout << "   [" << i->script_name.c_str() << " : " << i->addr.c_str() << "] - " << get_cgi_type(i->type) << "\n";
+    }
 
     for ( int i = 0; environ[i]; )
     {

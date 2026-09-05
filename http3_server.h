@@ -19,6 +19,7 @@
 #include <netinet/tcp.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <sys/un.h>
 
 #include <openssl/ssl.h>
 #include <openssl/bio.h>
@@ -31,37 +32,6 @@ extern const char *static_tab[][2];
 
 const int  ERR_TRY_AGAIN = -1000;
 
-struct Config
-{
-    std::string ServerSoftware;
-
-    std::string ServerAddr;
-    std::string ServerPort;
-
-    std::string DocumentRoot;
-    std::string ScriptDir;
-    std::string LogDir;
-
-    std::string Certificate;
-    std::string CertificateKey;
-
-    std::string UsePHP;
-    std::string PathPHP;
-
-    int MaxAcceptConnections;
-    int MaxStreams;
-
-    bool ServerNameIndication = false;
-
-    int TimeOut = 15;
-
-    int MaxCgiProc = 5;
-    int TimeoutCGI = 5;
-
-    bool ShowMediaFiles = false;
-};
-
-extern const Config* const conf;
 void kill_chld(pid_t pid);
 std::string log_time();
 
@@ -101,11 +71,12 @@ enum SOURCE_DATA
 enum STREAM_STATUS
 {
     READ_HEADERS = 0x1,
-    READ_DATA = 0x2,
-    SEND_HEADERS = 0x4,
-    SEND_DATA = 0x8,
-    SEND_END = 0x10,
-    STREAM_CLOSE = 0x20,
+    SEND_PARAM = 0x2,
+    READ_DATA = 0x4,
+    SEND_HEADERS = 0x8,
+    SEND_DATA = 0x10,
+    SEND_END = 0x20,
+    STREAM_CLOSE = 0x40,
 };
 
 enum CONNECT_STATUS
@@ -134,6 +105,65 @@ enum HTTP3_FRAME_TYPE
 
 enum CGI_TYPE { CGI, PHPCGI, PHPFPM, FASTCGI, SCGI, };
 //----------------------------------------------------------------------
+struct fcgi_list_addr
+{
+    std::string script_name;
+    std::string addr;
+    CGI_TYPE type;
+    fcgi_list_addr *next;
+};
+
+struct Config
+{
+    std::string ServerSoftware;
+
+    std::string ServerAddr;
+    std::string ServerPort;
+
+    std::string DocumentRoot;
+    std::string ScriptDir;
+    std::string LogDir;
+
+    std::string Certificate;
+    std::string CertificateKey;
+
+    std::string UsePHP;
+    std::string PathPHP;
+
+    int MaxAcceptConnections = 1;
+    int MaxStreams = 1;
+
+    bool ServerNameIndication = false;
+
+    int TimeOut = 15;
+
+    int MaxCgiProc = 5;
+    int TimeoutCGI = 5;
+
+    bool ShowMediaFiles = false;
+
+    fcgi_list_addr *fcgi_list = NULL;
+    
+    ~Config()
+    {
+        free_fcgi_list();
+    }
+    
+    void free_fcgi_list()
+    {
+        fcgi_list_addr *t;
+        while (fcgi_list)
+        {
+            t = fcgi_list;
+            fcgi_list = fcgi_list->next;
+            if (t)
+                delete t;
+        }
+    }
+};
+
+extern const Config* const conf;
+
 struct Cgi
 {
     CGI_TYPE type;
@@ -149,13 +179,19 @@ struct Cgi
     int to_script;
     int from_script;
 
+    const std::string *socket;
+    int fd;
+    int i_param;
+    int size_par;
+
     long long send_post_data = 0;
+    long long read_from_cgi = 0;
 
     BytesArray headers;
 
     ~Cgi()
     {
-        //fprintf(stderr, "<%s:%d> pid=%d, send_post_data=%lld\n", __func__, __LINE__, pid, send_post_data);
+        //fprintf(stderr, "<%s:%d> %d/%d/%d pid=%d, send_post_data=%lld\n", __func__, __LINE__, cgi, start, end, pid, send_post_data);
         if (pid)
         {
             kill_chld(pid);
@@ -374,6 +410,8 @@ struct Server
     int connect_shutdown(Connect *c, const char *func, int line);
     int create_response(Connect *c, Stream *s);
 
+    int cgi_handler();
+
     void close_connections()
     {
         Connect *c = list_start, *next = NULL;
@@ -415,7 +453,6 @@ int index_dir(Connect *c, const char *dir_path, const char *uri, BytesArray *htm
 //======================== event_loop.cpp ==============================
 void signal_handler(int signo);
 //============================ ssl.cpp =================================
-int create_server_socket(const char *port);
 SSL_CTX* InitCTX();
 int configure_context(SSL_CTX *ctx);
 const char *ssl_strerror(int err);
@@ -439,6 +476,9 @@ void create_error_message(Stream *s, int status, const char *msg);
 int cgi_parse_headers(Connect* c, Stream *resp, bool lower_case);
 int status_to_index(Stream *s, int status);
 int parse_server_headers(BytesArray *ba, int n);
+//=========================== socket.cpp ===============================
+int create_server_socket(const char *port);
+int create_cgi_socket(const char *script_path);
 //============================ util.cpp ================================
 std::string get_time();
 long long file_size(const char *s);
@@ -448,6 +488,7 @@ int strcmp_case(const char *s1, const char *s2);
 HTTP_METHOD get_int_method(const char *s);
 const char *get_str_method(int i);
 const char *get_str_frame_type(HTTP3_FRAME_TYPE t);
+const char *get_cgi_type(CGI_TYPE t);
 const char *get_content_type(const char *s);
 int clean_path(std::string& path);
 int parse_range(const char *s, long long file_size, long long *offset, long long *content_length);
@@ -463,6 +504,10 @@ void print_err(Connect *con, const char *format, ...);
 int cgi_create_proc(Connect *c, Stream *resp);
 int cgi_stdin(Stream *s, int fd);
 int cgi_stdout(Stream *s, int fd);
+bool is_cgi(Stream *s);
+//============================= scgi.cpp ===============================
+int scgi_create_connect(Connect *c, Stream *s);
+int scgi_send_param(Stream *s);
 //======================================================================
 
 #endif
