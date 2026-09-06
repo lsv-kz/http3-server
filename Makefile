@@ -1,7 +1,7 @@
-CFLAGS = -Wall -g -O2  -std=c++11
+CXXFLAGS = -Wall -g -O2  -std=c++11
 
-CC = c++
-#CC = clang++ 
+CXX = c++
+#CXX = clang++ 
 
 DEPS = http3_server.h bytes_array.h huffman.h
 
@@ -20,43 +20,43 @@ OBJS = http3_server.o \
 	
 
 http3_server: $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $(OBJS) -L/usr/local/lib/ -L/usr/local/lib64/ -lssl -lcrypto
+	$(CXX) $(CXXFLAGS) -o $@ $(OBJS) -lssl -lcrypto
 
 http3_server.o: http3_server.cpp $(DEPS)
-	$(CC) $(CFLAGS) -c http3_server.cpp -o $@
+	$(CXX) $(CXXFLAGS) -c http3_server.cpp -o $@
 
 event_loop.o: event_loop.cpp $(DEPS)
-	$(CC) $(CFLAGS) -c event_loop.cpp -o $@
+	$(CXX) $(CXXFLAGS) -c event_loop.cpp -o $@
 
 index.o: index.cpp $(DEPS)
-	$(CC) $(CFLAGS) -c index.cpp -o $@
+	$(CXX) $(CXXFLAGS) -c index.cpp -o $@
 
 http3.o: http3.cpp $(DEPS)
-	$(CC) $(CFLAGS) -c http3.cpp -o $@
+	$(CXX) $(CXXFLAGS) -c http3.cpp -o $@
 
 ssl.o: ssl.cpp $(DEPS)
-	$(CC) $(CFLAGS) -c ssl.cpp -o $@
+	$(CXX) $(CXXFLAGS) -c ssl.cpp -o $@
 
 socket.o: socket.cpp $(DEPS)
-	$(CC) $(CFLAGS) -c socket.cpp -o $@
+	$(CXX) $(CXXFLAGS) -c socket.cpp -o $@
 
 util.o: util.cpp $(DEPS)
-	$(CC) $(CFLAGS) -c util.cpp -o $@
+	$(CXX) $(CXXFLAGS) -c util.cpp -o $@
 
 config.o: config.cpp $(DEPS)
-	$(CC) $(CFLAGS) -c config.cpp -o $@
+	$(CXX) $(CXXFLAGS) -c config.cpp -o $@
 
 log.o: log.cpp $(DEPS)
-	$(CC) $(CFLAGS) -c log.cpp -o $@
+	$(CXX) $(CXXFLAGS) -c log.cpp -o $@
 
 cgi.o: cgi.cpp $(DEPS)
-	$(CC) $(CFLAGS) -c cgi.cpp -o $@
+	$(CXX) $(CXXFLAGS) -c cgi.cpp -o $@
 
 scgi.o: scgi.cpp $(DEPS)
-	$(CC) $(CFLAGS) -c scgi.cpp -o $@
+	$(CXX) $(CXXFLAGS) -c scgi.cpp -o $@
 
 percent_coding.o: percent_coding.cpp $(DEPS)
-	$(CC) $(CFLAGS) -c percent_coding.cpp -o $@
+	$(CXX) $(CXXFLAGS) -c percent_coding.cpp -o $@
 
 clean:
 	rm -f http3_server

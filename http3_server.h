@@ -131,7 +131,7 @@ struct Config
     std::string PathPHP;
 
     int MaxAcceptConnections = 1;
-    int MaxStreams = 1;
+    int MaxWorkStreams = 1;
 
     bool ServerNameIndication = false;
 

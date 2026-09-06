@@ -18,7 +18,7 @@ int main()
         << "\n LogDir: " << conf->LogDir
         << "\n ServerNameIndication: " << conf->ServerNameIndication
         << "\n MaxAcceptConnections: " << conf->MaxAcceptConnections
-        << "\n MaxStreams: " << conf->MaxStreams
+        << "\n MaxWorkStreams: " << conf->MaxWorkStreams
         << "\n TimeOut: " << conf->TimeOut
         << "\n MaxCgiProc: " << conf->MaxCgiProc
         << "\n TimeoutCGI: " << conf->TimeoutCGI
