@@ -26,7 +26,6 @@
 #include <openssl/err.h>
 
 #include "bytes_array.h"
-#include "huffman.h"
 
 extern const char *static_tab[][2];
 
@@ -42,6 +41,24 @@ int get_all_cgi();
 void inc_work_cgi();
 void dec_work_cgi();
 int get_work_cgi();
+//----------------------------------------------------------------------
+#define FCGI_KEEP_CONN  1
+#define FCGI_RESPONDER  1
+
+#define FCGI_VERSION_1           1
+#define FCGI_BEGIN_REQUEST       1
+#define FCGI_ABORT_REQUEST       2
+#define FCGI_END_REQUEST         3
+#define FCGI_PARAMS              4
+#define FCGI_STDIN               5
+#define FCGI_STDOUT              6
+#define FCGI_STDERR              7
+#define FCGI_DATA                8
+#define FCGI_GET_VALUES          9
+#define FCGI_GET_VALUES_RESULT  10
+#define FCGI_UNKNOWN_TYPE       11
+#define FCGI_MAXTYPE            (FCGI_UNKNOWN_TYPE)
+#define requestId               1
 //----------------------------------------------------------------------
 enum HTTP_METHOD
 {
@@ -134,6 +151,7 @@ struct Config
     int MaxWorkStreams = 1;
 
     bool ServerNameIndication = false;
+    bool HuffmanEncode = true;
 
     int TimeOut = 15;
 
@@ -176,13 +194,15 @@ struct Cgi
 
     pid_t pid = 0;
     std::string path;
-    int to_script;
-    int from_script;
+    int to_script = -1;
+    int from_script = -1;
 
     const std::string *socket;
-    int fd;
-    int i_param;
-    int size_par;
+    int fd = -1;
+
+    int fcgi_type = 0;
+    int fcgiContentLen = 0;
+    int fcgiPaddingLen = 0;
 
     long long send_post_data = 0;
     long long read_from_cgi = 0;
@@ -201,6 +221,12 @@ struct Cgi
             dec_work_cgi();
         if (cgi)
             dec_all_cgi();
+        if (to_script > 0)
+            close(to_script);
+        if (from_script > 0)
+            close(from_script);
+        if (fd > 0)
+            close(fd);
     }
 };
 
@@ -233,7 +259,7 @@ struct Stream
     std::string content_length;
 
     HTTP_METHOD httpMethod;
-    long long post_content_len = 0;
+    long long req_content_len = 0;
 
     std::string decode_path;
     std::string full_path;
@@ -246,6 +272,7 @@ struct Stream
     BytesArray buf;
     BytesArray headers;
     BytesArray data;
+    BytesArray params;
 
     int fd = -1;
     long long file_size = 0;
@@ -507,7 +534,14 @@ int cgi_stdout(Stream *s, int fd);
 bool is_cgi(Stream *s);
 //============================= scgi.cpp ===============================
 int scgi_create_connect(Connect *c, Stream *s);
-int scgi_send_param(Stream *s);
+int cgi_send_param(Stream *s);
+//============================= fcgi.cpp ===============================
+int fcgi_create_connect(Connect *c, Stream *str);
+int fcgi_stdin(Stream *s);
+int fcgi_stdout(Stream *s, int fd);
+//========================== huffman_code.cpp  =========================
+int huffman_encode(const char *in, BytesArray& out);
+int huffman_decode(const char *s, int len, std::string& out);
 //======================================================================
 
 #endif

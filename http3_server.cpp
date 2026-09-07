@@ -17,6 +17,7 @@ int main()
         << "\n PathPHP: " << conf->PathPHP
         << "\n LogDir: " << conf->LogDir
         << "\n ServerNameIndication: " << conf->ServerNameIndication
+        << "\n HuffmanEncode: " << conf->HuffmanEncode
         << "\n MaxAcceptConnections: " << conf->MaxAcceptConnections
         << "\n MaxWorkStreams: " << conf->MaxWorkStreams
         << "\n TimeOut: " << conf->TimeOut
@@ -101,7 +102,7 @@ int main()
     signal(SIGINT, signal_handler);
     signal(SIGPIPE, SIG_IGN);
 
-    printf("HTTP/3 server run port: %s. Waiting connect from clients ...\n", conf->ServerPort.c_str());
+    printf("HTTP/3 server run port: %s, pid: %u. Waiting connect from clients ...\n", conf->ServerPort.c_str(), getpid());
 
     Server server;
     server.event_loop(quic_listener, server_fd);

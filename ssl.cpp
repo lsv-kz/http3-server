@@ -188,7 +188,7 @@ int ssl_write(SSL *ssl, const char *buf, int buf_size, int *err)
             fprintf(stderr, "<%s:%d> Error SSL_write(): SSL_ERROR_WANT_READ\n", __func__, __LINE__);
             return ERR_TRY_AGAIN;
         }
-        fprintf(stderr, "<%s:%d> Error SSL_write()=%d: %s\n", __func__, __LINE__, ret, ssl_strerror(*err));
+        //fprintf(stderr, "<%s:%d> Error SSL_write()=%d: %s\n", __func__, __LINE__, ret, ssl_strerror(*err));
         return -1;
     }
 

@@ -165,7 +165,21 @@ int Server::set_poll()
                         int ret = scgi_create_connect(c, s);
                         if (ret < 0)
                         {
-                            create_error_message(s, 500, "<h1>500 Internal Server Error, (Error create cgi)</h1>");
+                            create_error_message(s, 500, "<h1>500 Internal Server Error, (Error create scgi)</h1>");
+                        }
+                        else
+                        {
+                            s->cgi.start = true;
+                            s->cgi.timer = now;
+                            work_cgi++;
+                        }
+                    }
+                    else if ((s->cgi.type == PHPFPM) || (s->cgi.type == FASTCGI))
+                    {
+                        int ret = fcgi_create_connect(c, s);
+                        if (ret < 0)
+                        {
+                            create_error_message(s, 500, "<h1>500 Internal Server Error, (Error create fcgi)</h1>");
                         }
                         else
                         {
@@ -191,6 +205,19 @@ int Server::set_poll()
                         }
                     }
                     else if (s->cgi.type == SCGI)
+                    {
+                        if ((s->status == READ_DATA) || (s->status == SEND_PARAM))
+                        {
+                            poll_fd[1 + cgi_stream_size].fd = s->cgi.fd;
+                            poll_fd[1 + cgi_stream_size].events = POLLOUT;
+                        }
+                        else
+                        {
+                            poll_fd[1 + cgi_stream_size].fd = s->cgi.fd;
+                            poll_fd[1 + cgi_stream_size].events = POLLIN;
+                        }
+                    }
+                    else if ((s->cgi.type == PHPFPM) || (s->cgi.type == FASTCGI))
                     {
                         if ((s->status == READ_DATA) || (s->status == SEND_PARAM))
                         {
@@ -519,11 +546,9 @@ int Server::stream_handler(Connect *c, Stream *s)
                 }
                 else if (s->frame_type == DATA)
                 {
-                    //if (s->cgi.send_post_data == 0)
-                    //    hex_print_stderr(__func__, __LINE__, buf, 256);
                     s->buf.ncat(buf, ret);
                     s->frame_size -= ret;
-                    s->post_content_len -= ret;
+                    s->req_content_len -= ret;
                 }
                 else
                 {
@@ -557,7 +582,6 @@ int Server::stream_handler(Connect *c, Stream *s)
                 else
                 {
                     headers_create(s, s->resp_status, 4);
-                    header_add(s, 92, conf->ServerSoftware.c_str());
                     s->headers.ncat(s->cgi.headers.ptr(), s->cgi.headers.size());
                     frame_set_size(&s->headers);
                     
@@ -700,7 +724,6 @@ int Server::stream_handler(Connect *c, Stream *s)
         }
         else if (ret > 0)
         {
-    //fprintf(stderr, "[%u/%u]<%s:%d> send DATA %d bytes\n", s->num_conn, s->num_stream, __func__, __LINE__, ret);                
             s->stream_timer = time(NULL);
             s->data.init();
 

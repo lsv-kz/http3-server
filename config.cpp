@@ -444,6 +444,19 @@ static int read_conf_file(FILE *fconf)
                     return -1;
                 }
             }
+            else if (!strcmp(s1, "HuffmanEncode"))
+            {
+                if (!strcmp_case(s2, "on"))
+                    c.HuffmanEncode = true;
+                else if (!strcmp_case(s2, "off"))
+                    c.HuffmanEncode = false;
+                else
+                {
+                    fprintf(stderr, "<%s:%d> Error config file line <%d> \"%s\": [on | off]\n",
+                            __func__, __LINE__, line_, str);
+                    return -1;
+                }
+            }
             else if ((!strcmp(s1, "TimeOut")) && is_number(s2))
                 c.TimeOut = atoi(s2);
             else if ((!strcmp(s1, "TimeoutCGI")) && is_number(s2))
@@ -472,7 +485,34 @@ static int read_conf_file(FILE *fconf)
         else if (n == 1)
         {
             if (!strcmp(str, "ServerSoftware"))
+            {
                 c.ServerSoftware = "";
+            }
+            else if (!strcmp(str, "fastcgi"))
+            {
+                if (find_bracket(fconf, '{') == 0)
+                {
+                    fprintf(stderr, "<%s:%d> Error not found \"{\", line <%d>\n", __func__, __LINE__, line_);
+                    return -1;
+                }
+
+                while (getLine(fconf, str, sizeof(str) - 1) == 2)
+                {
+                    char s1[512], s2[512];
+                    if (sscanf(str, "%s %s", s1, s2) != 2)
+                    {
+                        fprintf(stderr, "<%s:%d> Error sscanf(%s) != 2\n", __func__, __LINE__, str);
+                        return -1;
+                    }
+                    create_fcgi_list(&c.fcgi_list, s1, s2, FASTCGI);
+                }
+
+                if (strcmp(str, "}"))
+                {
+                    fprintf(stderr, "<%s:%d> Error not found \"}\", line <%d>\n", __func__, __LINE__, line_);
+                    return -1;
+                }
+            }
             else if (!strcmp(str, "scgi"))
             {
                 if (find_bracket(fconf, '{') == 0)

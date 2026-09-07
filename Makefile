@@ -3,11 +3,12 @@ CXXFLAGS = -Wall -g -O2  -std=c++11
 CXX = c++
 #CXX = clang++ 
 
-DEPS = http3_server.h bytes_array.h huffman.h
+DEPS = http3_server.h bytes_array.h
 
 OBJS = http3_server.o \
 	event_loop.o \
 	index.o \
+	fcgi.o \
 	cgi.o \
 	scgi.o \
 	http3.o \
@@ -16,6 +17,7 @@ OBJS = http3_server.o \
 	config.o \
 	log.o \
 	percent_coding.o \
+	huffman_code.o \
 	socket.o \
 	
 
@@ -49,6 +51,9 @@ config.o: config.cpp $(DEPS)
 log.o: log.cpp $(DEPS)
 	$(CXX) $(CXXFLAGS) -c log.cpp -o $@
 
+fcgi.o: fcgi.cpp $(DEPS)
+	$(CXX) $(CXXFLAGS) -c fcgi.cpp -o $@
+
 cgi.o: cgi.cpp $(DEPS)
 	$(CXX) $(CXXFLAGS) -c cgi.cpp -o $@
 
@@ -57,6 +62,9 @@ scgi.o: scgi.cpp $(DEPS)
 
 percent_coding.o: percent_coding.cpp $(DEPS)
 	$(CXX) $(CXXFLAGS) -c percent_coding.cpp -o $@
+
+huffman_code.o: huffman_code.cpp $(DEPS)
+	$(CXX) $(CXXFLAGS) -c huffman_code.cpp -o $@
 
 clean:
 	rm -f http3_server

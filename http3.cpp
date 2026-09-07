@@ -44,8 +44,7 @@ int get_str(BytesArray *ba, int val_len, bool huffman, std::string& str, int *of
 
     if (huffman)
     {
-        HuffmanCode huff;
-        huff.decode(ba->ptr() + *offset, val_len, str);
+        huffman_decode(ba->ptr() + *offset, val_len, str);
     }
     else
         str.assign(ba->ptr() + *offset, val_len);
@@ -88,8 +87,7 @@ int get_str(BytesArray *ba, std::string& str, int *offset)
 
     if (huffman)
     {
-        HuffmanCode huff;
-        huff.decode(ba->ptr() + *offset, val_len, str);
+        huffman_decode(ba->ptr() + *offset, val_len, str);
     }
     else
         str.assign(ba->ptr() + *offset, val_len);
@@ -191,7 +189,7 @@ int parse_headers(Stream *s)
             s->content_length = val;
             try
             {
-                s->post_content_len = stoll(val, NULL, 10);
+                s->req_content_len = stoll(val, NULL, 10);
             }
             catch (...)
             {
@@ -267,7 +265,7 @@ int Server::create_response(Connect *c, Stream *s)
         s->set_cgi();
         s->source_data = DYN_PAGE;
         s->cgi.type = CGI;
-        if ((s->httpMethod == M_POST) && (s->post_content_len > 0))
+        if ((s->httpMethod == M_POST) && (s->req_content_len > 0))
             s->status = READ_DATA;
         else
             s->status = SEND_HEADERS;
@@ -277,18 +275,19 @@ int Server::create_response(Connect *c, Stream *s)
     {
         s->set_cgi();
         s->source_data = DYN_PAGE;
-        if ((s->httpMethod == M_POST) && (s->post_content_len > 0))
-            s->status = READ_DATA;
-        else
-            s->status = SEND_HEADERS;
         if (conf->UsePHP == "php-cgi")
         {
             s->cgi.type = PHPCGI;
+            if ((s->httpMethod == M_POST) && (s->req_content_len > 0))
+                s->status = READ_DATA;
+            else
+                s->status = SEND_HEADERS;
         }
-        /*else if (conf->UsePHP == "php-fpm")
+        else if (conf->UsePHP == "php-fpm")
         {
             s->cgi.type = PHPFPM;
-        }*/
+            s->status = SEND_PARAM;
+        }
         else
         {
             create_error_message(s, RS404, "<h1>404 Not Found</h1>");
@@ -336,8 +335,6 @@ int Server::create_response(Connect *c, Stream *s)
         else
             headers_create(s, RS200, 4);
 
-        header_add(s, 92, conf->ServerSoftware.c_str());
-
         const char *resp_content_type = get_content_type(s->decode_path.c_str());
         if (resp_content_type)
             header_add(s, 44, resp_content_type); // 44 "content-type"
@@ -380,7 +377,6 @@ int Server::create_response(Connect *c, Stream *s)
             s->source_data = FROM_DATA_BUFFER;
 
             headers_create(s, 301, 4);
-            header_add(s, 92, conf->ServerSoftware.c_str());
             header_add(s, 12, s->raw_path.c_str());   // 12 "location"
             header_add(s, 44, "text/html");           // 44 "content-type"
             header_add(s, 4, s->buf.size());          // 4  "content-length"
@@ -399,7 +395,6 @@ int Server::create_response(Connect *c, Stream *s)
                 s->status = SEND_HEADERS;
                 s->source_data = FROM_DATA_BUFFER;
                 headers_create(s, RS200, 4);
-                header_add(s, 92, conf->ServerSoftware.c_str());
                 header_add(s, 4, s->buf.size());    // 4 "content-length"
                 header_add(s, 44, "text/html");
                 frame_set_size(&s->headers);
@@ -508,7 +503,6 @@ int Server::accept_stream(Connect *c, int stream_num)
             int ret = ssl_peek(c->tmp_stream, buf, 8, &err);
             if (ret > 0)
             {
-    //hex_print_stderr(__func__, __LINE__, buf, ret);
                 if (buf[0] == 0)
                 {
                     if (!c->ctrl_ssl)
@@ -695,6 +689,44 @@ int int_to_bytes(BytesArray& buf, int data, int pref_len, int huff_coding_mask)
     return ret;
 }
 //======================================================================
+void add_header_name(BytesArray *ba, const char *name)
+{
+    int name_len = strlen(name);
+    if (conf->HuffmanEncode)
+    {
+        BytesArray buf;
+        buf.reserve(name_len);
+    
+        huffman_encode(name, buf);
+        int_to_bytes(*ba, buf.size(), 3, 0x28);
+        ba->ncat(buf.ptr(), buf.size());
+    }
+    else
+    {
+        int_to_bytes(*ba, name_len, 3, 0x20);
+        ba->strcat(name);
+    }
+}
+//======================================================================
+void add_header_val(BytesArray *ba, const char *val)
+{
+    int val_len = strlen(val);
+    if (conf->HuffmanEncode)
+    {
+        BytesArray buf;
+        buf.reserve(val_len);
+
+        huffman_encode(val, buf);
+        int_to_bytes(*ba, buf.size(), 7, 0x80);
+        ba->ncat(buf.ptr(), buf.size());
+    }
+    else
+    {
+        int_to_bytes(*ba, val_len, 7, 0);
+        ba->strcat(val);
+    }
+}
+//======================================================================
 int headers_create(Stream *s, int status, int size_bytes_num)
 {
     const char *ptr;
@@ -732,10 +764,12 @@ int headers_create(Stream *s, int status, int size_bytes_num)
 
     s->headers.bytecat(0xd7);              // 23 ":scheme" "https"
 
+    if (conf->ServerSoftware.size())
+        header_add(s, 92, conf->ServerSoftware.c_str());
+
     s->headers.bytecat(0x56);              // 6  "date"  ""
     string date = get_time();
-    int_to_bytes(s->headers, date.size(), 7, 0);
-    s->headers.strcat(date.c_str());
+    add_header_val(&s->headers, date.c_str());
 
     header_add(s, "count_connect", s->num_conn);
     header_add(s, "count_streams", s->num_stream);
@@ -755,8 +789,7 @@ void header_add(Stream *s, int ind, const char *val)
     if (val == NULL)
         return;
     int_to_bytes(s->headers, ind, 4, 0x50);
-    int_to_bytes(s->headers, strlen(val), 7, 0);
-    s->headers.strcat(val);
+    add_header_val(&s->headers, val);
 }
 //======================================================================
 void header_add(Stream *s, int ind, long long val)
@@ -764,40 +797,34 @@ void header_add(Stream *s, int ind, long long val)
     int_to_bytes(s->headers, ind, 4, 0x50);
     char buf[32];
     snprintf(buf, sizeof(buf), "%lld", val);
-    int_to_bytes(s->headers, strlen(buf), 7, 0);
-    s->headers.strcat(buf);
+    add_header_val(&s->headers, buf);
 }
 //======================================================================
 void header_add(Stream *s, const char *name, long long ll)
 {
     if (name == NULL)
         return;
-    int_to_bytes(s->headers, strlen(name), 3, 0x20);
-    s->headers.strcat(name);
     char val[32];
     snprintf(val, sizeof(val),"%lld", ll);
-    int_to_bytes(s->headers, strlen(val), 7, 0);
-    s->headers.strcat(val);
+
+    add_header_name(&s->headers, name);
+    add_header_val(&s->headers, val);
 }
 //======================================================================
 void header_add(Stream *s, const char *name, const char *val)
 {
     if ((name == NULL) || (val == NULL))
         return;
-    int_to_bytes(s->headers, strlen(name), 3, 0x20);
-    s->headers.strcat(name);
-    int_to_bytes(s->headers, strlen(val), 7, 0);
-    s->headers.strcat(val);
+    add_header_name(&s->headers, name);
+    add_header_val(&s->headers, val);
 }
 //======================================================================
 void header_add(BytesArray *ba, const char *name, const char *val)
 {
     if ((name == NULL) || (val == NULL))
         return;
-    int_to_bytes(*ba, strlen(name), 3, 0x20);
-    ba->strcat(name);
-    int_to_bytes(*ba, strlen(val), 7, 0);
-    ba->strcat(val);
+    add_header_name(ba, name);
+    add_header_val(ba, val);
 }
 //======================================================================
 void frame_set_size(BytesArray *ba)
@@ -853,13 +880,13 @@ void create_error_message(Stream *s, int status, const char *msg)
     create_html(&s->buf, msg, "Error");
 
     headers_create(s, status, 4);
-    header_add(s, 92, conf->ServerSoftware.c_str());
     header_add(s, 44, "text/html");
     header_add(s, 4, s->buf.size()); // 4 "content-length"
     frame_set_size(&s->headers);
     s->status = SEND_HEADERS;
     s->source_data = FROM_DATA_BUFFER;
     s->stream_timer = time(NULL);
+    s->data.init();
 }
 //======================================================================
 int cgi_parse_headers(Connect* c, Stream *resp, bool lower_case)

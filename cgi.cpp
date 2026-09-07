@@ -199,7 +199,7 @@ int cgi_fork(Connect *c, Stream *s, int* serv_cgi, int* cgi_serv)
                 serv_cgi[0] = -1;
             }
 
-            if (s->post_content_len <= 0)
+            if (s->req_content_len <= 0)
             {
                 close(serv_cgi[1]);
                 serv_cgi[1] = -1;
@@ -281,7 +281,7 @@ int cgi_stdin(Stream *s, int fd)
             if (s->buf.size_remain() == 0)
                 s->buf.init();
 
-            if ((s->post_content_len <= 0) && (s->buf.size() == 0))
+            if ((s->req_content_len <= 0) && (s->buf.size() == 0))
             {
                 s->status = SEND_HEADERS;
                 close(s->cgi.to_script);
@@ -355,7 +355,7 @@ int Server::cgi_handler()
                 if (poll_fd[1 + i].revents == POLLOUT)
                 {
                     if (s->status == SEND_PARAM)
-                        scgi_send_param(s);
+                        cgi_send_param(s);
                     else if (s->status == READ_DATA)
                         cgi_stdin(s, s->cgi.fd);
                 }
@@ -368,6 +368,20 @@ int Server::cgi_handler()
                 else
                 {
                     s->cgi.end = true;
+                }
+            }
+            else if ((s->cgi.type == PHPFPM) || (s->cgi.type == FASTCGI))
+            {
+                if (poll_fd[1 + i].revents == POLLOUT)
+                {
+                    if (s->status == SEND_PARAM)
+                        cgi_send_param(s);
+                    else if (s->status == READ_DATA)
+                        fcgi_stdin(s);
+                }
+                else if (poll_fd[1 + i].revents & POLLIN)
+                {
+                    fcgi_stdout(s, s->cgi.fd);
                 }
             }
         }
