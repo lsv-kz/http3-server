@@ -191,7 +191,6 @@ int fcgi_create_params(Connect *c, Stream *str)
         return -1;
     }
 
-    str->cgi.timer = 0;
     fcgi_set_header(&str->params, 16, FCGI_PARAMS);
     str->params.ncat("\x01\x04\x00\x01\x00\x00\x00\x00", 8);
     return 0;
@@ -258,7 +257,7 @@ int fcgi_stdin(Stream *s)
             return 0;
         else
         {
-            create_error_message(s, RS502, "502 Bad Gateway");
+            create_error_message(s, RS502, "<h2>502 Bad Gateway</h2>");
             return -1;
         }
     }
@@ -290,9 +289,10 @@ int fcgi_stdout(Stream *str, int fd)
                 return -1;
             }
 
-            str->cgi.timer = 0;
+            str->cgi.timer = time(NULL);
             str->cgi.fcgiPaddingLen -= ret;
-            return 0;
+            if (str->cgi.fcgiPaddingLen > 0)
+                return 0;
         }
         
         char s[8];
@@ -337,6 +337,8 @@ int fcgi_stdout(Stream *str, int fd)
             str->cgi.timer = time(NULL);
             str->cgi.read_from_cgi += ret;
         }
+        else
+            return -1;
     }
     else if (str->cgi.fcgi_type == FCGI_STDERR)
     {
@@ -353,6 +355,8 @@ int fcgi_stdout(Stream *str, int fd)
             str->cgi.timer = time(NULL);
             str->cgi.read_from_cgi += ret;
         }
+        else
+            return -1;
     }
     else if (str->cgi.fcgi_type == FCGI_END_REQUEST)
     {
@@ -368,6 +372,8 @@ int fcgi_stdout(Stream *str, int fd)
             str->cgi.timer = time(NULL);
             str->cgi.read_from_cgi += ret;
         }
+        else
+            return -1;
     }
 
     return 0;

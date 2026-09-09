@@ -134,6 +134,9 @@ int ssl_read(SSL *ssl, char *buf, int buf_size, int *err)
         return -1;
     }
 
+    if (err)
+        *err = 0;
+
     int ret = SSL_read(ssl, buf, buf_size);
     if (ret > 0)
     {
@@ -141,25 +144,27 @@ int ssl_read(SSL *ssl, char *buf, int buf_size, int *err)
     }
     else
     {
-        *err = SSL_get_error(ssl, ret);
-        if (*err == SSL_ERROR_ZERO_RETURN)
+        int e = SSL_get_error(ssl, ret);
+        if (err)
+            *err = e;
+        if (e == SSL_ERROR_ZERO_RETURN)
         {
             fprintf(stderr, "<%s:%d> Error SSL_read(): SSL_ERROR_ZERO_RETURN\n", __func__, __LINE__);
             return -1;
         }
-        else if (*err == SSL_ERROR_WANT_READ)
+        else if (e == SSL_ERROR_WANT_READ)
         {
             //fprintf(stderr, "<%s:%d> Error SSL_read(): SSL_ERROR_WANT_READ\n", __func__, __LINE__);
             return 0;
         }
-        else if (*err == SSL_ERROR_WANT_WRITE)
+        else if (e == SSL_ERROR_WANT_WRITE)
         {
             fprintf(stderr, "<%s:%d> Error SSL_read(): SSL_ERROR_WANT_WRITE\n", __func__, __LINE__);
             return 0;
         }
         else
         {
-            fprintf(stderr, "<%s:%d> Error SSL_read(, , %d)=%d: %s\n", __func__, __LINE__, buf_size, ret, ssl_strerror(*err));
+            fprintf(stderr, "<%s:%d> Error SSL_read(, , %d)=%d: %s\n", __func__, __LINE__, buf_size, ret, ssl_strerror(e));
             return -1;
         }
     }
@@ -174,21 +179,26 @@ int ssl_write(SSL *ssl, const char *buf, int buf_size, int *err)
         return -1;
     }
 
+    if (err)
+        *err = 0;
+
     int ret = SSL_write(ssl, buf, buf_size);
     if (ret <= 0)
     {
-        *err = SSL_get_error(ssl, ret);
-        if (*err == SSL_ERROR_WANT_WRITE)
+        int e = SSL_get_error(ssl, ret);
+        if (err)
+            *err = e;
+        if (e == SSL_ERROR_WANT_WRITE)
         {
             //fprintf(stderr, "<%s:%d> Error SSL_write(): SSL_ERROR_WANT_WRITE\n", __func__, __LINE__);
             return ERR_TRY_AGAIN;
         }
-        else if (*err == SSL_ERROR_WANT_READ)
+        else if (e == SSL_ERROR_WANT_READ)
         {
             fprintf(stderr, "<%s:%d> Error SSL_write(): SSL_ERROR_WANT_READ\n", __func__, __LINE__);
             return ERR_TRY_AGAIN;
         }
-        //fprintf(stderr, "<%s:%d> Error SSL_write()=%d: %s\n", __func__, __LINE__, ret, ssl_strerror(*err));
+        //fprintf(stderr, "<%s:%d> Error SSL_write()=%d: %s\n", __func__, __LINE__, ret, ssl_strerror(e));
         return -1;
     }
 
@@ -204,6 +214,9 @@ int ssl_peek(SSL *ssl, char *buf, int buf_size, int *err)
         return -1;
     }
 
+    if (err)
+        *err = 0;
+
     int ret = SSL_peek(ssl, buf, buf_size);
     if (ret > 0)
     {
@@ -211,25 +224,27 @@ int ssl_peek(SSL *ssl, char *buf, int buf_size, int *err)
     }
     else
     {
-        *err = SSL_get_error(ssl, ret);
-        if (*err == SSL_ERROR_ZERO_RETURN)
+        int e = SSL_get_error(ssl, ret);
+        if (err)
+            *err = e;
+        if (e == SSL_ERROR_ZERO_RETURN)
         {
             fprintf(stderr, "<%s:%d> Error SSL_peek(): SSL_ERROR_ZERO_RETURN\n", __func__, __LINE__);
             return -1;
         }
-        else if (*err == SSL_ERROR_WANT_READ)
+        else if (e == SSL_ERROR_WANT_READ)
         {
             //fprintf(stderr, "<%s:%d> Error SSL_peek(): SSL_ERROR_WANT_READ\n", __func__, __LINE__);
             return 0;
         }
-        else if (*err == SSL_ERROR_WANT_WRITE)
+        else if (e == SSL_ERROR_WANT_WRITE)
         {
             fprintf(stderr, "<%s:%d> Error SSL_peek(): SSL_ERROR_WANT_WRITE\n", __func__, __LINE__);
             return 0;
         }
         else
         {
-            fprintf(stderr, "<%s:%d> Error SSL_peek(, , %d)=%d: %s\n", __func__, __LINE__, buf_size, ret, ssl_strerror(*err));
+            fprintf(stderr, "<%s:%d> Error SSL_peek(, , %d)=%d: %s\n", __func__, __LINE__, buf_size, ret, ssl_strerror(e));
             return -1;
         }
     }

@@ -132,6 +132,8 @@ struct fcgi_list_addr
 
 struct Config
 {
+    bool PrintLog = false;
+
     std::string ServerSoftware;
 
     std::string ServerAddr;
@@ -336,9 +338,18 @@ struct Connect
 
     SSL *tmp_stream = NULL;
 
-    SSL *ctrl_ssl = NULL;
-    SSL *enc_ssl = NULL;
-    SSL *dec_ssl = NULL;
+    SSL *cl_ctrl_stream = NULL;
+    SSL *cl_enc_stream = NULL;
+    SSL *cl_dec_stream = NULL;
+
+    SSL *ctrl_stream = NULL;
+    bool create_ctrl = false;
+
+    SSL *enc_stream = NULL;
+    bool create_enc = false;
+
+    SSL *dec_stream = NULL;
+    bool create_dec = false;
 
     long long size_send_data = 0;
     long long size_send_frame_data = 0;
@@ -392,12 +403,19 @@ struct Connect
     {
         fprintf(stderr, "[%s]-[%u~]<%s:%d> send_data=%lld, size_frames_data=%lld, work_stream=%d\n", log_time().c_str(), num_conn, __func__, __LINE__, size_send_data, size_send_frame_data, num_work_stream);
         fprintf(stdout, "[%s]-[%u~]<%s:%d> send_data=%lld, size_frames_data=%lld, work_stream=%d\n", log_time().c_str(), num_conn, __func__, __LINE__, size_send_data, size_send_frame_data, num_work_stream);
-        if (ctrl_ssl)
-            SSL_free(ctrl_ssl);
-        if (enc_ssl)
-            SSL_free(enc_ssl);
-        if (dec_ssl)
-            SSL_free(dec_ssl);
+        if (cl_ctrl_stream)
+            SSL_free(cl_ctrl_stream);
+        if (cl_enc_stream)
+            SSL_free(cl_enc_stream);
+        if (cl_dec_stream)
+            SSL_free(cl_dec_stream);
+
+        if (ctrl_stream)
+            SSL_free(ctrl_stream);
+        if (enc_stream)
+            SSL_free(enc_stream);
+        if (dec_stream)
+            SSL_free(dec_stream);
 
         if (stream_start)
         {
@@ -428,11 +446,12 @@ struct Server
 
     void add_to_list(Connect *c);
     void close_connect(Connect *c);
-    int set_poll();
+    int set_poll(int);
     void event_loop(SSL *quic_listener, int socket_fd);
     void connect_handler();
     int stream_handler(Connect *c, Stream *s);
     int accept_stream(Connect *c, int stream_num);
+    int create_uni_streams(Connect *c);
     void close_stream(Connect *c, Stream *s);
     int connect_shutdown(Connect *c, const char *func, int line);
     int create_response(Connect *c, Stream *s);
@@ -489,7 +508,7 @@ int ssl_peek(SSL *ssl, char *buf, int buf_size, int *err);
 //=========================== http3.cpp ================================
 int parse_headers(Stream *s);
 int read_head_frame(Stream *s);
-
+int int_to_bytes(BytesArray& buf, int data, int pref_len, int huff_coding_mask);
 int headers_create(Stream *s, int status, int n);
 void header_add(Stream *s, int ind);
 void header_add(Stream *s, int ind, const char *val);
@@ -502,7 +521,7 @@ void create_html(BytesArray *ba, const char *msg, const char *title);
 void create_error_message(Stream *s, int status, const char *msg);
 int cgi_parse_headers(Connect* c, Stream *resp, bool lower_case);
 int status_to_index(Stream *s, int status);
-int parse_server_headers(BytesArray *ba, int n);
+int parse_server_headers(Stream *s, int n);
 //=========================== socket.cpp ===============================
 int create_server_socket(const char *port);
 int create_cgi_socket(const char *script_path);

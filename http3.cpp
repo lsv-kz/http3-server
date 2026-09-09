@@ -97,8 +97,12 @@ int get_str(BytesArray *ba, std::string& str, int *offset)
 //======================================================================
 int parse_headers(Stream *s)
 {
-    //fprintf(stderr, "[%u/%u]<%s:%d> -------- HEADERS recv from client ----------\n", s->num_conn, s->num_stream, __func__, __LINE__);
-    //hex_print_stderr(__func__, __LINE__, s->headers.ptr(), s->headers.size());
+    if (conf->PrintLog)
+    {
+        fprintf(stderr, "\n[%u/%u]<%s:%d> ----- HEADERS recv from client -----\n", s->num_conn, s->num_stream, __func__, __LINE__);
+        //hex_print_stderr(__func__, __LINE__, s->headers.ptr(), s->headers.size());
+    }
+
     int offset = 0;
     int ch;
     std::string name;
@@ -169,7 +173,8 @@ int parse_headers(Stream *s)
             return -1;
         }
 
-    //fprintf(stderr, "[0x%02X] [%s: %s]\n", ch, name.c_str(), val.c_str());
+        if (conf->PrintLog)
+            fprintf(stderr, "[0x%02X] [%s: %s]\n", ch, name.c_str(), val.c_str());
 
         if (name == ":method")
         {
@@ -199,7 +204,6 @@ int parse_headers(Stream *s)
         }
         else if (name == "range")
         {
-            //print_err("<%s:%d> [%s: %s]\n", __func__, __LINE__, name.c_str(), val.c_str());
             s->range = val;
         }
         else if (name == ":path")
@@ -216,6 +220,8 @@ int parse_headers(Stream *s)
         }
     }
 
+    if (conf->PrintLog)
+        fprintf(stderr, "\n");
     return 0;
 }
 //======================================================================
@@ -224,7 +230,7 @@ int Server::create_response(Connect *c, Stream *s)
     int ret = parse_headers(s);
     if (ret < 0)
     {
-        create_error_message(s, RS500, "<h1>500 Internal Server Error</h1>");
+        create_error_message(s, RS500, "<h2>500 Internal Server Error</h2>");
         return -1;
     }
 
@@ -248,7 +254,7 @@ int Server::create_response(Connect *c, Stream *s)
     if (clean_path(s->decode_path) < 0)
     {
         print_err("<%s:%d> Error clean_path(%s)\n", __func__, __LINE__, s->decode_path.c_str());
-        create_error_message(s, RS400, "<h1>400 Bad Request</h1>");
+        create_error_message(s, RS400, "<h2>400 Bad Request</h2>");
         return 0;
     }
 
@@ -260,7 +266,7 @@ int Server::create_response(Connect *c, Stream *s)
     if (!strncmp(s->decode_path.c_str(), "/cgi-bin/", 9) || !strncmp(s->decode_path.c_str(), "/cgi/", 5))
     {/*
         fprintf(stderr, "<%s:%d> Error: CGI is not supported\n", __func__, __LINE__);
-        create_error_message(s, 404, "<h1>404 Not Found (CGI is not supported)</h1>");
+        create_error_message(s, 404, "<h2>404 Not Found (CGI is not supported)</h2>");
         */
         s->set_cgi();
         s->source_data = DYN_PAGE;
@@ -290,7 +296,7 @@ int Server::create_response(Connect *c, Stream *s)
         }
         else
         {
-            create_error_message(s, RS404, "<h1>404 Not Found</h1>");
+            create_error_message(s, RS404, "<h2>404 Not Found</h2>");
         }
         return 0;
     }
@@ -303,7 +309,7 @@ int Server::create_response(Connect *c, Stream *s)
         if (s->file_size < 0)
         {
             print_err("<%s:%d> Error file_size(%s)\n", __func__, __LINE__, s->full_path.c_str());
-            create_error_message(s, RS500, "<h1>500 Internal Server Error</h1>");
+            create_error_message(s, RS500, "<h2>500 Internal Server Error</h2>");
             return 0;
         }
 
@@ -313,7 +319,7 @@ int Server::create_response(Connect *c, Stream *s)
             if (ret < 0)
             {
                 print_err("<%s:%d> Error parse_range(%s)\n", __func__, __LINE__, s->range.c_str());
-                create_error_message(s, RS400, "<h1>400 Bad Request</h1>");
+                create_error_message(s, RS400, "<h2>400 Bad Request</h2>");
                 return 0;
             }
             else if (ret == 0)
@@ -356,9 +362,9 @@ int Server::create_response(Connect *c, Stream *s)
         {
             fprintf(stderr, "<%s:%d> Error open(%s): %s\n", __func__, __LINE__, s->full_path.c_str(), strerror(errno));
             if (errno == EACCES)
-                create_error_message(s, RS403, "<h1>403 Forbidden</h1>");
+                create_error_message(s, RS403, "<h2>403 Forbidden</h2>");
             else
-                create_error_message(s, RS404, "<h1>404 Not Found</h1>");
+                create_error_message(s, RS404, "<h2>404 Not Found</h2>");
         }
 
         if (s->offset > 0)
@@ -369,7 +375,7 @@ int Server::create_response(Connect *c, Stream *s)
         if (s->decode_path[s->decode_path.size() - 1] != '/')
         {
             s->raw_path += '/';
-            string loc = "<h1>301 Moved</h1>\n";
+            string loc = "<h2>301 Moved</h2>\n";
             loc += "The document has moved ";
             loc += "<a href=\"" + s->raw_path + "\">here</a>";
             create_html(&s->buf, loc.c_str(), "301 Moved");
@@ -387,7 +393,7 @@ int Server::create_response(Connect *c, Stream *s)
             int err = index_dir(c, s->full_path.c_str(), s->decode_path.c_str(), &s->buf);
             if (err)
             {
-                create_error_message(s, RS500, "<h1>500 Internal Server Error</h1>");
+                create_error_message(s, RS500, "<h2>500 Internal Server Error</h2>");
                 return -1;
             }
             else
@@ -406,7 +412,7 @@ int Server::create_response(Connect *c, Stream *s)
         if (is_cgi(s) == false)
         {
             print_err("[%u/%u]<%s:%d> Error: 404 Not Found\n", s->num_conn, s->num_stream, __func__, __LINE__);
-            create_error_message(s, RS404, "<h1>404 Not Found</h1>");
+            create_error_message(s, RS404, "<h2>404 Not Found</h2>");
         }
     }
 
@@ -505,18 +511,18 @@ int Server::accept_stream(Connect *c, int stream_num)
             {
                 if (buf[0] == 0)
                 {
-                    if (!c->ctrl_ssl)
+                    if (!c->cl_ctrl_stream)
                     {
-                        c->ctrl_ssl = c->tmp_stream;
+                        c->cl_ctrl_stream = c->tmp_stream;
                         c->tmp_stream = NULL;
-                        int pend = SSL_pending(c->ctrl_ssl);
-                        //fprintf(stderr, "[%u]<%s:%d> Accept Control Stream, pend=%d\n", c->num_conn, __func__, __LINE__, pend);
+                        int pend = SSL_pending(c->cl_ctrl_stream);
+                        fprintf(stderr, "[%u]<%s:%d> Accept Control Stream, pend=%d\n", c->num_conn, __func__, __LINE__, pend);
                         if (pend)
                         {
                             if (pend > (int)sizeof(buf))
                                 pend = sizeof(buf);
                             int err = 0;
-                            ret = ssl_read(c->ctrl_ssl, buf, pend, &err);
+                            ret = ssl_read(c->cl_ctrl_stream, buf, pend, &err);
                             if (ret > 0)
                                 hex_print_stderr(__func__, __LINE__, buf, ret);
                         }
@@ -528,13 +534,13 @@ int Server::accept_stream(Connect *c, int stream_num)
                 }
                 else if (buf[0] == 2)
                 {
-                    if (!c->enc_ssl)
+                    if (!c->cl_enc_stream)
                     {
-                        //fprintf(stderr, "[%u]<%s:%d> Accept Encoder Stream\n", c->num_conn, __func__, __LINE__);
-                        c->enc_ssl = c->tmp_stream;
+                        fprintf(stderr, "[%u]<%s:%d> Accept Encoder Stream\n", c->num_conn, __func__, __LINE__);
+                        c->cl_enc_stream = c->tmp_stream;
                         c->tmp_stream = NULL;
                         int err = 0;
-                        ssl_read(c->enc_ssl, buf, sizeof(buf), &err);
+                        ssl_read(c->cl_enc_stream, buf, sizeof(buf), &err);
                     }
                     else
                     {
@@ -543,13 +549,13 @@ int Server::accept_stream(Connect *c, int stream_num)
                 }
                 else if (buf[0] == 3)
                 {
-                    if (!c->dec_ssl)
+                    if (!c->cl_dec_stream)
                     {
-                        //fprintf(stderr, "[%u]<%s:%d> Accept Decoder Stream\n", c->num_conn, __func__, __LINE__);
-                        c->dec_ssl = c->tmp_stream;
+                        fprintf(stderr, "[%u]<%s:%d> Accept Decoder Stream\n", c->num_conn, __func__, __LINE__);
+                        c->cl_dec_stream = c->tmp_stream;
                         c->tmp_stream = NULL;
                         int err = 0;
-                        ssl_read(c->dec_ssl, buf, sizeof(buf), &err);
+                        ssl_read(c->cl_dec_stream, buf, sizeof(buf), &err);
                     }
                     else
                     {
@@ -558,7 +564,6 @@ int Server::accept_stream(Connect *c, int stream_num)
                 }
                 else if (buf[0] == 1)
                 {
-                    //print_err(c, "<%s:%d> Accept Stream\n", __func__, __LINE__);
                     Stream *s = c->create_stream(c->tmp_stream);
                     if (s)
                     {
@@ -602,6 +607,96 @@ int Server::accept_stream(Connect *c, int stream_num)
     }
 
     return ret;
+}
+//======================================================================
+int Server::create_uni_streams(Connect *c)
+{
+    if (c->create_ctrl == false)
+    {
+        if (c->ctrl_stream == NULL)
+        {
+            c->ctrl_stream = SSL_new_stream(c->ssl_conn, SSL_STREAM_FLAG_UNI);
+            if (c->ctrl_stream == NULL)
+            {
+                fprintf(stderr, "<%s:%d> Error SSL_new_stream() for Control Stream\n", __func__, __LINE__);
+                ERR_get_error();
+                return -1;
+            }
+            else
+            {
+                fprintf(stderr, "<%s:%d> Create control stream_id=%lu\n", __func__, __LINE__, SSL_get_stream_id(c->ctrl_stream));
+            }
+        }
+
+        int err = ssl_write(c->ctrl_stream, "\x0\x04\x0", 3, NULL);// "\x04\x0" 
+        if (err <= 0)
+        {
+            fprintf(stderr, "<%s:%d> Error ssl_write()=%d\n", __func__, __LINE__, err);
+            return -1;
+        }
+        else// if (err > 0)
+        {
+            fprintf(stderr, "<%s:%d> send SETTINGS to server %d bytes\n", __func__, __LINE__, err);
+        }
+
+        c->create_ctrl = true;
+    }
+
+    if (c->create_enc == false)
+    {
+        if (c->enc_stream == NULL)
+        {
+            c->enc_stream = SSL_new_stream(c->ssl_conn, SSL_STREAM_FLAG_UNI);
+            if (c->enc_stream == NULL)
+            {
+                fprintf(stderr, "<%s:%d> Error SSL_new_stream() for Encoder Stream\n", __func__, __LINE__);
+                return -1;
+            }
+            else
+            {
+                fprintf(stderr, "<%s:%d> Create Encoder Stream, id=%lu\n", __func__, __LINE__, SSL_get_stream_id(c->enc_stream));
+            }
+        }
+
+        int err = ssl_write(c->enc_stream, "\x02", 1, NULL);
+        if (err <= 0)
+        {
+            fprintf(stderr, "<%s:%d> Error ssl_write()=%d\n", __func__, __LINE__, err);
+            return -1;
+        }
+
+        c->create_enc = true;
+    }
+
+    if (c->create_dec == false)
+    {
+        if (c->dec_stream == NULL)
+        {
+            c->dec_stream = SSL_new_stream(c->ssl_conn, SSL_STREAM_FLAG_UNI);
+            if (c->dec_stream == NULL)
+            {
+                fprintf(stderr, "<%s:%d> Error SSL_new_stream() for Decoder Stream\n", __func__, __LINE__);
+                ERR_get_error();
+                return -1;
+            }
+            else
+            {
+                fprintf(stderr, "<%s:%d> Create Decoder Stream, id=%lu\n", __func__, __LINE__, SSL_get_stream_id(c->dec_stream));
+            }
+        }
+
+        int err = ssl_write(c->dec_stream, "\x03", 1, NULL);
+        if (err <= 0)
+        {
+            fprintf(stderr, "<%s:%d> Error ssl_write()=%d\n", __func__, __LINE__, err);
+            return -1;
+        }
+
+        c->create_dec = true;
+    }
+
+    fprintf(stderr, "<%s:%d> Create all uni streams\n", __func__, __LINE__);
+    return 0;
 }
 //======================================================================
 int Server::connect_shutdown(Connect *c, const char *func, int line)
@@ -652,8 +747,8 @@ int Server::connect_shutdown(Connect *c, const char *func, int line)
     }
     else if (ret == 1)
     {
-        //print_err(c, "<%s:%d> SSL_shutdown()=%d\n", __func__, __LINE__, ret);
-        //printf("[%u]<%s:%d> SSL_shutdown()=%d\n", c->num_conn, __func__, __LINE__, ret);
+        print_err(c, "SSL_shutdown()=1\n");
+        printf("[%u] SSL_shutdown()=1\n", c->num_conn);
         close_connect(c);
         return 1;
     }
@@ -1070,10 +1165,16 @@ int status_to_index(Stream *s, int status)
     return 0;
 }
 //======================================================================
-int parse_server_headers(BytesArray *ba, int n)
+int parse_server_headers(Stream *str, int n)
 {
-    //fprintf(stderr, "<%s:%d> -------- HEADERS send to client ----------\n", __func__, __LINE__);
-    //hex_print_stderr(__func__, __LINE__, ba->ptr(), ba->size());
+    if (conf->PrintLog)
+    {
+        fprintf(stderr, "\n[%u/%u]<%s:%d> ----- HEADERS send to client -----\n", str->num_conn, str->num_stream, __func__, __LINE__);
+        //hex_print_stderr(__func__, __LINE__, ba->ptr(), ba->size());
+    }
+
+    BytesArray *ba = &str->headers;
+
     int offset = 0;
     int ch;
     std::string name;
@@ -1089,7 +1190,7 @@ int parse_server_headers(BytesArray *ba, int n)
             fprintf(stderr, "<%s:%d> Error ch=%d, 0x%X\n", __func__, __LINE__, ch, ch);
             return -1;
         }
-        //fprintf(stderr, "[0x%X] [%08b]\n", ch, ch);
+
         if (ch >= 0x80)                     // 4.5.2. Indexed Field Line
         {
             if (!(ch & 0x40))
@@ -1144,11 +1245,14 @@ int parse_server_headers(BytesArray *ba, int n)
             fprintf(stderr, "<%s:%d> Error [0x%02X]\n", __func__, __LINE__, ch);
             return -1;
         }
-        
-        //fprintf(stderr, "[0x%02X] [%s: %s]\n", ch, name.c_str(), val.c_str());
-        //fprintf(stderr, "[0x%02X] [%08b] [%s: %s]\n", ch, ch, name.c_str(), val.c_str());
+
+        if (conf->PrintLog)
+            fprintf(stderr, "[0x%02X] [%s: %s]\n", ch, name.c_str(), val.c_str());
+            //fprintf(stderr, "[0x%02X] [%08b] [%s: %s]\n", ch, ch, name.c_str(), val.c_str());
     }
 
+    if (conf->PrintLog)
+        fprintf(stderr, "\n");
     return 0;
 }
 //======================================================================

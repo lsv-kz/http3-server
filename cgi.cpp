@@ -171,7 +171,7 @@ int cgi_fork(Connect *c, Stream *s, int* serv_cgi, int* cgi_serv)
                 "<meta http-equiv=\"content-type\" content=\"text/html\">\n"
                 "</head>\n"
                 "<body>\n"
-                "<p> 500 Internal Server Error</p>\n"
+                "<h2> 500 Internal Server Error</h2>\n"
                 "</body>\n"
                 "</html>";
             write(STDOUT_FILENO, err_msg, strlen(err_msg));
@@ -182,7 +182,6 @@ int cgi_fork(Connect *c, Stream *s, int* serv_cgi, int* cgi_serv)
     else
     {
         s->cgi.pid = pid;
-        s->cgi.timer = 0;
 
         close(cgi_serv[1]);
         cgi_serv[1] = -1;
@@ -292,7 +291,7 @@ int cgi_stdin(Stream *s, int fd)
         {
             fprintf(stderr, "[%u/%u]<%s:%d> Error cgi_stdin()=%d\n", s->num_conn, s->num_stream, __func__, __LINE__, ret);
             s->cgi.end = true;
-            create_error_message(s, RS502, "502 Bad Gateway");
+            create_error_message(s, RS502, "<h2>502 Bad Gateway</h2>");
             return -1;
         }
     }
@@ -331,58 +330,56 @@ int Server::cgi_handler()
         Stream *s = cgi_stream[i];
         if (poll_fd[1 + i].revents)
         {
-            if ((s->cgi.type == CGI) || (s->cgi.type == PHPCGI))
+            if (poll_fd[1 + i].revents == POLLOUT)
             {
-                if (poll_fd[1 + i].revents == POLLOUT)
+                if ((s->cgi.type == CGI) || (s->cgi.type == PHPCGI))
                 {
                     cgi_stdin(s, s->cgi.to_script);
                 }
-                else if (poll_fd[1 + i].revents & POLLIN)
-                {
-                    cgi_stdout(s, s->cgi.from_script);
-                    if (poll_fd[1 + i].revents & POLLHUP)
-                        s->cgi.end = true;
-                }
-                else
-                {
-                    //fprintf(stderr, "[%u/%u]<%s:%d> CGI: %d/%d/%d, pid=%d, fd=%d, revents=0x%02X; %lld\n", s->num_conn, s->num_stream, 
-                    //        __func__, __LINE__, s->cgi.cgi, s->cgi.start, s->cgi.end, s->cgi.pid, poll_fd[1 + i].fd, poll_fd[1 + i].revents, s->cgi.read_from_cgi);
-                    s->cgi.end = true;
-                }
-            }
-            else if (s->cgi.type == SCGI)
-            {
-                if (poll_fd[1 + i].revents == POLLOUT)
+                else if (s->cgi.type == SCGI)
                 {
                     if (s->status == SEND_PARAM)
                         cgi_send_param(s);
                     else if (s->status == READ_DATA)
                         cgi_stdin(s, s->cgi.fd);
                 }
-                else if (poll_fd[1 + i].revents & POLLIN)
-                {
-                    cgi_stdout(s, s->cgi.fd);
-                    if (poll_fd[1 + i].revents & POLLHUP)
-                        s->cgi.end = true;
-                }
-                else
-                {
-                    s->cgi.end = true;
-                }
-            }
-            else if ((s->cgi.type == PHPFPM) || (s->cgi.type == FASTCGI))
-            {
-                if (poll_fd[1 + i].revents == POLLOUT)
+                else if ((s->cgi.type == PHPFPM) || (s->cgi.type == FASTCGI))
                 {
                     if (s->status == SEND_PARAM)
                         cgi_send_param(s);
                     else if (s->status == READ_DATA)
                         fcgi_stdin(s);
                 }
-                else if (poll_fd[1 + i].revents & POLLIN)
+            }
+            else if (poll_fd[1 + i].revents & POLLIN)
+            {
+                if ((s->cgi.type == CGI) || (s->cgi.type == PHPCGI))
                 {
-                    fcgi_stdout(s, s->cgi.fd);
+                    cgi_stdout(s, s->cgi.from_script);
+                    if (poll_fd[1 + i].revents & POLLHUP)
+                        s->cgi.end = true;
                 }
+                else if (s->cgi.type == SCGI)
+                {
+                    cgi_stdout(s, s->cgi.fd);
+                    if (poll_fd[1 + i].revents & POLLHUP)
+                        s->cgi.end = true;
+                }
+                else if ((s->cgi.type == PHPFPM) || (s->cgi.type == FASTCGI))
+                {
+                    if (fcgi_stdout(s, s->cgi.fd))
+                    {
+                        s->cgi.end = true;
+                        if (s->status <= SEND_HEADERS)
+                            create_error_message(s, RS502, "<h2>502 Bad Gateway</h2>");
+                    }
+                }
+            }
+            else
+            {
+                s->cgi.end = true;
+                if (s->status <= SEND_HEADERS)
+                    create_error_message(s, RS502, "<h2>502 Bad Gateway</h2>");
             }
         }
         else
@@ -390,7 +387,7 @@ int Server::cgi_handler()
             if ((now - s->cgi.timer) >= conf->TimeoutCGI)
             {
                 fprintf(stderr, "[%u/%u]<%s:%d> CGI timeout %d sec\n", s->num_conn, s->num_stream, __func__, __LINE__, (int)(now - s->cgi.timer));
-                create_error_message(s, RS504, "<h1>504 Gateway Time-out</h1>");
+                create_error_message(s, RS504, "<h2>504 Gateway Time-out</h2>");
             }
         }
     }

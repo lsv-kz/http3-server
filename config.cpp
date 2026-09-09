@@ -457,6 +457,19 @@ static int read_conf_file(FILE *fconf)
                     return -1;
                 }
             }
+            else if (!strcmp(s1, "PrintLog"))
+            {
+                if (!strcmp_case(s2, "on"))
+                    c.PrintLog = true;
+                else if (!strcmp_case(s2, "off"))
+                    c.PrintLog = false;
+                else
+                {
+                    fprintf(stderr, "<%s:%d> Error config file line <%d> \"%s\": [on | off]\n",
+                            __func__, __LINE__, line_, str);
+                    return -1;
+                }
+            }
             else if ((!strcmp(s1, "TimeOut")) && is_number(s2))
                 c.TimeOut = atoi(s2);
             else if ((!strcmp(s1, "TimeoutCGI")) && is_number(s2))

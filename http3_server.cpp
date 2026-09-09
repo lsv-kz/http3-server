@@ -8,7 +8,8 @@ int main()
 {
     if (read_conf_file("server.conf"))
         return 1;
-    cout <<  " ServerAddr: " << conf->ServerAddr
+    cout <<  " PrintLog: " << conf->PrintLog
+        << "\n ServerAddr: " << conf->ServerAddr
         << "\n ServerPort: " << conf->ServerPort
         << "\n ServerSoftware: " << conf->ServerSoftware
         << "\n DocumentRoot: " << conf->DocumentRoot
@@ -53,9 +54,6 @@ int main()
         }
     }
 
-    BIO *bio = NULL;
-    SSL *quic_listener = NULL;
-
     SSL_CTX *ctx = InitCTX();
     if (ctx == NULL)
     {
@@ -70,14 +68,14 @@ int main()
 
     create_logfiles(conf->LogDir);
 
-    bio = BIO_new_dgram(server_fd, BIO_CLOSE);
+    BIO *bio = BIO_new_dgram(server_fd, BIO_CLOSE);
     if (!bio)
     {
         fprintf(stderr, "<%s:%d> Error BIO_new_dgram()\n", __func__, __LINE__);
         return 1;
     }
 
-    quic_listener = SSL_new_listener(ctx, 0);
+    SSL *quic_listener = SSL_new_listener(ctx, 0);
     if (!quic_listener)
     {
         fprintf(stderr, "<%s:%d> Error SSL_new_listener()\n", __func__, __LINE__);

@@ -96,9 +96,8 @@ int get_poll_timeout(SSL *quic_listener)
     return timeout_ms < 0 ? 0 : timeout_ms;
 }
 //======================================================================
-int Server::set_poll()
+int Server::set_poll(int min_timeout)
 {
-    int min_timeout = 100;
     cgi_stream_size = 0;
     Connect *c = list_start, *c_next = NULL;
     for ( ; c; c = c_next)
@@ -111,6 +110,14 @@ int Server::set_poll()
             if (timeout < min_timeout)
                 min_timeout = timeout;
         }
+        else
+        {
+            fprintf(stderr, "[%s]!!!<%s:%d> timeout=%d\n", log_time().c_str(), __func__, __LINE__, timeout);
+            fprintf(stdout, "[%s]!!!<%s:%d> timeout=%d\n", log_time().c_str(), __func__, __LINE__, timeout);
+        }
+
+        if (min_timeout > conf->TimeOut)
+            min_timeout = conf->TimeOut;
 
         time_t now = time(NULL);
         Stream *s = c->stream_start, *s_next = NULL;
@@ -151,7 +158,7 @@ int Server::set_poll()
                         int ret = cgi_create_proc(c, s);
                         if (ret < 0)
                         {
-                            create_error_message(s, 500, "<h1>500 Internal Server Error, (Error create cgi)</h1>");
+                            create_error_message(s, 500, "<h2>500 Internal Server Error, (Error create cgi)</h2>");
                         }
                         else
                         {
@@ -165,7 +172,7 @@ int Server::set_poll()
                         int ret = scgi_create_connect(c, s);
                         if (ret < 0)
                         {
-                            create_error_message(s, 500, "<h1>500 Internal Server Error, (Error create scgi)</h1>");
+                            create_error_message(s, 500, "<h2>500 Internal Server Error, (Error create scgi)</h2>");
                         }
                         else
                         {
@@ -179,7 +186,7 @@ int Server::set_poll()
                         int ret = fcgi_create_connect(c, s);
                         if (ret < 0)
                         {
-                            create_error_message(s, 500, "<h1>500 Internal Server Error, (Error create fcgi)</h1>");
+                            create_error_message(s, 500, "<h2>500 Internal Server Error, (Error create fcgi)</h2>");
                         }
                         else
                         {
@@ -191,47 +198,58 @@ int Server::set_poll()
                 }
                 else if (s->cgi.start)
                 {
-                    if ((s->cgi.type == CGI) || (s->cgi.type == PHPCGI))
+                    if ((now - s->cgi.timer) >= conf->TimeoutCGI)
                     {
-                        if (s->status == READ_DATA)
-                        {
-                            poll_fd[1 + cgi_stream_size].fd = s->cgi.to_script;
-                            poll_fd[1 + cgi_stream_size].events = POLLOUT;
-                        }
-                        else
-                        {
-                            poll_fd[1 + cgi_stream_size].fd = s->cgi.from_script;
-                            poll_fd[1 + cgi_stream_size].events = POLLIN;
-                        }
+                        fprintf(stderr, "[%u/%u]<%s:%d> CGI timeout %d sec; %d/%d\n", s->num_conn, s->num_stream, __func__, __LINE__, (int)(now - s->cgi.timer), (int)now, (int)s->cgi.timer);
+                        if (s->status <= SEND_HEADERS)
+                            create_error_message(s, RS504, "<h2>504 Gateway Time-out</h2>");
                     }
-                    else if (s->cgi.type == SCGI)
+                    else
                     {
-                        if ((s->status == READ_DATA) || (s->status == SEND_PARAM))
+                        if ((s->cgi.type == CGI) || (s->cgi.type == PHPCGI))
                         {
-                            poll_fd[1 + cgi_stream_size].fd = s->cgi.fd;
-                            poll_fd[1 + cgi_stream_size].events = POLLOUT;
+                            if (s->status == READ_DATA)
+                            {
+                                poll_fd[1 + cgi_stream_size].fd = s->cgi.to_script;
+                                poll_fd[1 + cgi_stream_size].events = POLLOUT;
+                            }
+                            else
+                            {
+                                poll_fd[1 + cgi_stream_size].fd = s->cgi.from_script;
+                                poll_fd[1 + cgi_stream_size].events = POLLIN;
+                            }
                         }
-                        else
+                        else if (s->cgi.type == SCGI)
                         {
-                            poll_fd[1 + cgi_stream_size].fd = s->cgi.fd;
-                            poll_fd[1 + cgi_stream_size].events = POLLIN;
+                            if ((s->status == READ_DATA) || (s->status == SEND_PARAM))
+                            {
+                                poll_fd[1 + cgi_stream_size].fd = s->cgi.fd;
+                                poll_fd[1 + cgi_stream_size].events = POLLOUT;
+                            }
+                            else
+                            {
+                                poll_fd[1 + cgi_stream_size].fd = s->cgi.fd;
+                                poll_fd[1 + cgi_stream_size].events = POLLIN;
+                            }
                         }
+                        else if ((s->cgi.type == PHPFPM) || (s->cgi.type == FASTCGI))
+                        {
+                            if ((s->status == READ_DATA) || (s->status == SEND_PARAM))
+                            {
+                                poll_fd[1 + cgi_stream_size].fd = s->cgi.fd;
+                                poll_fd[1 + cgi_stream_size].events = POLLOUT;
+                            }
+                            else
+                            {
+                                poll_fd[1 + cgi_stream_size].fd = s->cgi.fd;
+                                poll_fd[1 + cgi_stream_size].events = POLLIN;
+                            }
+                        }
+    
+                        cgi_stream[cgi_stream_size++] = s;
+                        if (min_timeout > conf->TimeoutCGI)
+                            min_timeout = conf->TimeoutCGI;
                     }
-                    else if ((s->cgi.type == PHPFPM) || (s->cgi.type == FASTCGI))
-                    {
-                        if ((s->status == READ_DATA) || (s->status == SEND_PARAM))
-                        {
-                            poll_fd[1 + cgi_stream_size].fd = s->cgi.fd;
-                            poll_fd[1 + cgi_stream_size].events = POLLOUT;
-                        }
-                        else
-                        {
-                            poll_fd[1 + cgi_stream_size].fd = s->cgi.fd;
-                            poll_fd[1 + cgi_stream_size].events = POLLIN;
-                        }
-                    }
-
-                    cgi_stream[cgi_stream_size++] = s;
                 }
             }
 
@@ -276,20 +294,18 @@ void Server::event_loop(SSL *quic_listener, int socket_fd)
 
         poll_num = 1;
 
+        poll_timeout = get_poll_timeout(quic_listener);
         if (list_start)
         {
-            poll_timeout = set_poll();
+            poll_timeout = set_poll(poll_timeout);
             poll_num += cgi_stream_size;
-
-            if ((poll_timeout < 0) || (poll_timeout >1000))
+/*
+            if ((poll_timeout < 0) || (poll_timeout >100))
             {
-                fprintf(stderr, "[%s]!!!!!!!!!!<%s:%d> 0x%02X, timeout=%d, poll_num=%d, work_cgi=%d\n", log_time().c_str(), __func__, __LINE__, poll_fd[0].events, poll_timeout, poll_num, work_cgi);
-                poll_timeout = 1000;
-            }
-        }
-        else
-        {
-            poll_timeout = get_poll_timeout(quic_listener);
+                fprintf(stderr, "[%s]!!!<%s:%d> 0x%02X, timeout=%d, poll_num=%d, work_cgi=%d\n", log_time().c_str(), __func__, __LINE__, poll_fd[0].events, poll_timeout, poll_num, work_cgi);
+                fprintf(stdout, "[%s]!!!<%s:%d> 0x%02X, timeout=%d, poll_num=%d, work_cgi=%d\n", log_time().c_str(), __func__, __LINE__, poll_fd[0].events, poll_timeout, poll_num, work_cgi);
+                poll_timeout = 100;
+            }*/
         }
 
         int ret = poll(poll_fd, poll_num, poll_timeout);
@@ -433,12 +449,11 @@ void Server::connect_handler()
                 // SSL_INCOMING_STREAM_POLICY_AUTO     create 1 stream
                 // SSL_INCOMING_STREAM_POLICY_ACCEPT   create > 1 streams
                 // SSL_INCOMING_STREAM_POLICY_REJECT   create 0 stream
-                /*int err =*/ SSL_set_incoming_stream_policy(c->ssl_conn, SSL_INCOMING_STREAM_POLICY_ACCEPT, 123);
-                //print_err(c, "<%s:%d> SSL_set_incoming_stream_policy()=%d\n", __func__, __LINE__, err);
+                SSL_set_incoming_stream_policy(c->ssl_conn, SSL_INCOMING_STREAM_POLICY_ACCEPT, 0);
             }
             else
             {
-                if ((now - c->conn_timer) > 5)
+                if ((now - c->conn_timer) > 10)
                 {
                     print_err(c, "<%s:%d> Error SSL_get_state(), timeout=%d\n", __func__, __LINE__, (int)(now - c->conn_timer));
                     connect_shutdown(c, __func__, __LINE__);
@@ -450,6 +465,9 @@ void Server::connect_handler()
 
         if (c->status == CONNECT_OK)
         {
+            if ((!c->create_ctrl || !c->create_enc || !c->create_dec))
+                create_uni_streams(c);
+
             if (c->num_work_stream < conf->MaxWorkStreams)
             {
                 long n = SSL_get_accept_stream_queue_len(c->ssl_conn);
@@ -466,6 +484,54 @@ void Server::connect_handler()
         }
         else
             continue;
+
+        if (c->cl_ctrl_stream)
+        {
+            int pend = SSL_pending(c->cl_ctrl_stream);
+            if (pend)
+            {
+                char buf[127];
+                int ret = ssl_read(c->cl_ctrl_stream, buf, sizeof(buf), NULL);
+                if (conf->PrintLog)
+                {
+                    print_err(c, "<%s:%d> !!! Control Stream pending %d bytes\n", __func__, __LINE__, pend);
+                    if (ret > 0)
+                        hex_print_stderr(__func__, __LINE__, buf, ret);
+                }
+            }
+        }
+
+        if (c->cl_enc_stream)
+        {
+            int pend = SSL_pending(c->cl_enc_stream);
+            if (pend)
+            {
+                char buf[127];
+                int ret = ssl_read(c->cl_enc_stream, buf, sizeof(buf), NULL);
+                if (conf->PrintLog)
+                {
+                    print_err(c, "<%s:%d> !!! Encoder Stream pending %d bytes\n", __func__, __LINE__, pend);
+                    if (ret > 0)
+                        hex_print_stderr(__func__, __LINE__, buf, ret);
+                }
+            }
+        }
+
+        if (c->cl_dec_stream)
+        {
+            int pend = SSL_pending(c->cl_dec_stream);
+            if (pend)
+            {
+                char buf[127];
+                int ret = ssl_read(c->cl_dec_stream, buf, sizeof(buf), NULL);
+                if (conf->PrintLog)
+                {
+                    print_err(c, "<%s:%d> !!! Decoder Stream pending %d bytes\n", __func__, __LINE__, pend);
+                    if (ret > 0)
+                        hex_print_stderr(__func__, __LINE__, buf, ret);
+                }
+            }
+        }
 
         if (c->stream_start)
             c->conn_timer = now;
@@ -573,7 +639,7 @@ int Server::stream_handler(Connect *c, Stream *s)
                 int ret = cgi_parse_headers(c, s, true);
                 if (ret < 0)
                 {
-                    create_error_message(s, 500, "<h1>500 Internal Server Error</h1>");
+                    create_error_message(s, 500, "<h2>500 Internal Server Error</h2>");
                 }
                 else if (ret == 0)
                 {
@@ -607,7 +673,7 @@ int Server::stream_handler(Connect *c, Stream *s)
         else if (ret > 0)
         {
             //fprintf(stderr, "[%u/%u]<%s:%d> send HEADERS %d bytes\n", s->num_conn, s->num_stream, __func__, __LINE__, ret);
-            parse_server_headers(&s->headers, 5);
+            parse_server_headers(s, 5);
             s->headers.init();
             s->status = SEND_DATA;
             s->stream_timer = time(NULL);

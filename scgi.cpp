@@ -161,14 +161,14 @@ static int scgi_create_params(Connect *c, Stream *s)
     if (ret)
     {
         print_err(c, "[%d]<%s:%d> Error scgi_set_param()\n", s->num_stream, __func__, __LINE__);
-        create_error_message(s, RS502, "502 Bad Gateway");
+        create_error_message(s, RS502, "<h2>502 Bad Gateway</h2>");
         return -1;
     }
 
     if (scgi_set_size_data(&s->params) < 0)
     {
         print_err(c, "<%s:%d> Error scgi_set_size_data()\n", __func__, __LINE__);
-        create_error_message(s, RS502, "502 Bad Gateway");
+        create_error_message(s, RS502, "<h2>502 Bad Gateway</h2>");
         return -1;
     }
 
@@ -185,7 +185,7 @@ int cgi_send_param(Stream *s)
             return 0;
         else
         {
-            create_error_message(s, RS502, "502 Bad Gateway");
+            create_error_message(s, RS502, "<h2>502 Bad Gateway</h2>");
             return -1;
         }
     }
@@ -234,7 +234,6 @@ int scgi_create_connect(Connect *c, Stream *s)
         return ret;
     else
     {
-        s->cgi.timer = 0;
         int opt = 1;
         ioctl(s->cgi.fd, FIONBIO, &opt);
     }
