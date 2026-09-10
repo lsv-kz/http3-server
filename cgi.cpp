@@ -282,7 +282,7 @@ int cgi_stdin(Stream *s, int fd)
 
             if ((s->req_content_len <= 0) && (s->buf.size() == 0))
             {
-                s->status = SEND_HEADERS;
+                set_stream_status(s, SEND_HEADERS);
                 close(s->cgi.to_script);
                 s->cgi.to_script = -1;
             }

@@ -29,19 +29,19 @@ void fcgi_set_header(BytesArray* ba, int offset, unsigned char type)
     ba->set_byte(0, 7 + offset);
 }
 //======================================================================
-void fcgi_set_header(char *s, unsigned char type, int dataLen)
+void fcgi_set_header(char *buf, unsigned char type, int dataLen)
 {
-    s[0] = (unsigned char)FCGI_VERSION_1;
-    s[1] = (unsigned char)type;
-    s[2] = (unsigned char)((1 >> 8) & 0xff);
-    s[3] = (unsigned char)((1) & 0xff);
-    s[4] = (unsigned char)((dataLen >> 8) & 0xff);
-    s[5] = (unsigned char)((dataLen) & 0xff);
-    s[6] = 0;
-    s[7] = 0;
+    buf[0] = (unsigned char)FCGI_VERSION_1;
+    buf[1] = (unsigned char)type;
+    buf[2] = (unsigned char)((1 >> 8) & 0xff);
+    buf[3] = (unsigned char)((1) & 0xff);
+    buf[4] = (unsigned char)((dataLen >> 8) & 0xff);
+    buf[5] = (unsigned char)((dataLen) & 0xff);
+    buf[6] = 0;
+    buf[7] = 0;
 }
 //======================================================================
-int fcgi_add_param(Stream *str, const char *name, const char *val, int len_val)
+int fcgi_add_param(Stream *s, const char *name, const char *val, int len_val)
 {
     if (name == NULL)
     {
@@ -52,7 +52,7 @@ int fcgi_add_param(Stream *str, const char *name, const char *val, int len_val)
     int len_name = strlen(name);
     if (val == NULL)
         len_val = 0;
-    char s[8], *p = s;
+    char buf[8], *p = buf;
     int i = 0;
 
     if (len_name < 0x80)
@@ -83,107 +83,107 @@ int fcgi_add_param(Stream *str, const char *name, const char *val, int len_val)
         i += 4;
     }
 
-    str->params.ncat(s, i);
-    str->params.ncat(name, len_name);
+    s->cgi.params.ncat(buf, i);
+    s->cgi.params.ncat(name, len_name);
     if (len_val > 0)
     {
-        str->params.ncat(val, len_val);
+        s->cgi.params.ncat(val, len_val);
     }
 
     return 0;
 }
 //======================================================================
-int fcgi_create_params(Connect *c, Stream *str)
+int fcgi_create_params(Connect *c, Stream *s)
 {
     int ret = 0;
-    str->params.ncat("\0\0\0\0\0\0\0\0", 8);
+    s->cgi.params.ncat("\0\0\0\0\0\0\0\0", 8);
 
-    if (str->cgi.type == PHPFPM)
+    if (s->cgi.type == PHPFPM)
     {
-        ret += fcgi_add_param(str, "REDIRECT_STATUS", "true", 4);
+        ret += fcgi_add_param(s, "REDIRECT_STATUS", "true", 4);
     }
 
-    ret += fcgi_add_param(str, "PATH", "/bin:/usr/bin:/usr/local/bin", 28);
+    ret += fcgi_add_param(s, "PATH", "/bin:/usr/bin:/usr/local/bin", 28);
 
-    ret += fcgi_add_param(str, 
+    ret += fcgi_add_param(s, 
             "SERVER_SOFTWARE",
             conf->ServerSoftware.c_str(), conf->ServerSoftware.size());
 
-    ret += fcgi_add_param(str, 
+    ret += fcgi_add_param(s, 
             "GATEWAY_INTERFACE",
             "CGI/1.1", 7);
 
-    ret += fcgi_add_param(str, 
+    ret += fcgi_add_param(s, 
             "DOCUMENT_ROOT",
             conf->DocumentRoot.c_str(), conf->DocumentRoot.size());
 
-    ret += fcgi_add_param(str,
+    ret += fcgi_add_param(s,
                     "DOCUMENT_URI",
-                    str->decode_path.c_str(), str->decode_path.size());
+                    s->decode_path.c_str(), s->decode_path.size());
 
-    ret += fcgi_add_param(str,
+    ret += fcgi_add_param(s,
                     "REQUEST_URI",
-                    str->raw_path.c_str(), str->raw_path.size());
+                    s->raw_path.c_str(), s->raw_path.size());
 
-    ret += fcgi_add_param(str,
+    ret += fcgi_add_param(s,
                     "REQUEST_METHOD",
-                    get_str_method(str->httpMethod), strlen(get_str_method(str->httpMethod)));
+                    get_str_method(s->httpMethod), strlen(get_str_method(s->httpMethod)));
 
-    ret += fcgi_add_param(str,
+    ret += fcgi_add_param(s,
                     "SERVER_PROTOCOL",
                     "HTTP/3.0", 8);
 
-    ret += fcgi_add_param(str,
+    ret += fcgi_add_param(s,
                     "SERVER_PORT",
                     conf->ServerPort.c_str(), conf->ServerPort.size());
 
-    if (str->referer.size())
+    if (s->referer.size())
     {
-        ret += fcgi_add_param(str,
+        ret += fcgi_add_param(s,
                     "HTTP_REFERER",
-                    str->referer.c_str(), str->referer.size());
+                    s->referer.c_str(), s->referer.size());
     }
 
-    if (str->user_agent.size())
+    if (s->user_agent.size())
     {
-        ret += fcgi_add_param(str,
+        ret += fcgi_add_param(s,
                     "HTTP_USER_AGENT",
-                    str->user_agent.c_str(), str->user_agent.size());
+                    s->user_agent.c_str(), s->user_agent.size());
     }
 
-    ret += fcgi_add_param(str,
+    ret += fcgi_add_param(s,
                     "SCRIPT_NAME",
-                    str->decode_path.c_str(), str->decode_path.size());
+                    s->decode_path.c_str(), s->decode_path.size());
 
-    if (str->cgi.type == PHPFPM)
+    if (s->cgi.type == PHPFPM)
     {
-        str->cgi.path = conf->DocumentRoot;
-        str->cgi.path += str->decode_path.c_str();
-        ret += fcgi_add_param(str,
+        s->cgi.path = conf->DocumentRoot;
+        s->cgi.path += s->decode_path.c_str();
+        ret += fcgi_add_param(s,
                     "SCRIPT_FILENAME",
-                    str->cgi.path.c_str(), str->cgi.path.size());
+                    s->cgi.path.c_str(), s->cgi.path.size());
     }
 
-    if (str->httpMethod == M_POST)
+    if (s->httpMethod == M_POST)
     {
-        if (str->content_type.size())
+        if (s->content_type.size())
         {
-            ret += fcgi_add_param(str,
+            ret += fcgi_add_param(s,
                     "CONTENT_TYPE",
-                    str->content_type.c_str(), str->content_type.size());
+                    s->content_type.c_str(), s->content_type.size());
         }
 
-        if (str->content_length.size())
+        if (s->content_length.size())
         {
-            ret += fcgi_add_param(str,
+            ret += fcgi_add_param(s,
                         "CONTENT_LENGTH", 
-                        str->content_length.c_str(), str->content_length.size());
+                        s->content_length.c_str(), s->content_length.size());
         }
     }
 
-    ret += fcgi_add_param(str,
+    ret += fcgi_add_param(s,
                     "QUERY_STRING",
-                    str->query_string.c_str(), str->query_string.size());
+                    s->query_string.c_str(), s->query_string.size());
 
     if (ret)
     {
@@ -191,47 +191,47 @@ int fcgi_create_params(Connect *c, Stream *str)
         return -1;
     }
 
-    fcgi_set_header(&str->params, 16, FCGI_PARAMS);
-    str->params.ncat("\x01\x04\x00\x01\x00\x00\x00\x00", 8);
+    fcgi_set_header(&s->cgi.params, 16, FCGI_PARAMS);
+    s->cgi.params.ncat("\x01\x04\x00\x01\x00\x00\x00\x00", 8);
     return 0;
 }
 //======================================================================
-int fcgi_create_connect(Connect *c, Stream *str)
+int fcgi_create_connect(Connect *c, Stream *s)
 {
-    if ((str->cgi.type != PHPFPM) && (str->cgi.type != FASTCGI))
+    if ((s->cgi.type != PHPFPM) && (s->cgi.type != FASTCGI))
     {
-        print_err("<%s:%d> ? req->scriptType=%d \n", __func__, __LINE__, str->cgi.type);
+        print_err("<%s:%d> ? req->scriptType=%d \n", __func__, __LINE__, s->cgi.type);
         return -1;
     }
 
-    if (str->cgi.type == PHPFPM)
-        str->cgi.socket = &conf->PathPHP;
+    if (s->cgi.type == PHPFPM)
+        s->cgi.socket = &conf->PathPHP;
 
-    str->cgi.fd = create_cgi_socket(str->cgi.socket->c_str());
-    if (str->cgi.fd < 0)
+    s->cgi.fd = create_cgi_socket(s->cgi.socket->c_str());
+    if (s->cgi.fd < 0)
     {
         print_err("<%s:%d> Error connect to fcgi\n", __func__, __LINE__);
         return -1;
     }
 
-    char s[16];
-    s[0] = FCGI_VERSION_1;
-    s[1] = FCGI_BEGIN_REQUEST;
-    s[2] = (unsigned char) ((1 >> 8) & 0xff);
-    s[3] = (unsigned char) ((1) & 0xff);
-    s[4] = (unsigned char) ((8 >> 8) & 0xff);
-    s[5] = (unsigned char) ((8) & 0xff);
-    s[6] = 0;
-    s[7] = 0;
+    char buf[16];
+    buf[0] = FCGI_VERSION_1;
+    buf[1] = FCGI_BEGIN_REQUEST;
+    buf[2] = (unsigned char) ((1 >> 8) & 0xff);
+    buf[3] = (unsigned char) ((1) & 0xff);
+    buf[4] = (unsigned char) ((8 >> 8) & 0xff);
+    buf[5] = (unsigned char) ((8) & 0xff);
+    buf[6] = 0;
+    buf[7] = 0;
 
-    s[8] = (unsigned char) ((FCGI_RESPONDER >> 8) & 0xff);
-    s[9] = (unsigned char) (FCGI_RESPONDER        & 0xff);
-    s[10] = (unsigned char) 0;
-    memset(s + 11, 0, 5);
-    str->params.reserve(4096);
-    str->params.ncpy(s, 16);
-    str->status = SEND_PARAM;
-    return fcgi_create_params(c, str);
+    buf[8] = (unsigned char) ((FCGI_RESPONDER >> 8) & 0xff);
+    buf[9] = (unsigned char) (FCGI_RESPONDER        & 0xff);
+    buf[10] = (unsigned char) 0;
+    memset(buf + 11, 0, 5);
+    s->cgi.params.reserve(4096);
+    s->cgi.params.ncpy(buf, 16);
+    set_stream_status(s, SEND_PARAM);
+    return fcgi_create_params(c, s);
 }
 //======================================================================
 int fcgi_stdin(Stream *s)
@@ -268,35 +268,33 @@ int fcgi_stdin(Stream *s)
     {
         s->data.init();
         if ((s->buf.size() == 0) && (s->req_content_len <= 0))
-        {
-            s->status = SEND_HEADERS;
-        }
+            set_stream_status(s, SEND_HEADERS);
     }
 
     return 0;
 }
 //======================================================================
-int fcgi_stdout(Stream *str, int fd)
+int fcgi_stdout(Stream *s, int fd)
 {
-    if (str->cgi.fcgiContentLen == 0)
+    if (s->cgi.fcgiContentLen == 0)
     {
-        if (str->cgi.fcgiPaddingLen > 0)
+        if (s->cgi.fcgiPaddingLen > 0)
         {
-            char s[256];
-            int ret = read(fd, s, str->cgi.fcgiPaddingLen);
+            char buf[256];
+            int ret = read(fd, buf, s->cgi.fcgiPaddingLen);
             if (ret <= 0)
             {
                 return -1;
             }
 
-            str->cgi.timer = time(NULL);
-            str->cgi.fcgiPaddingLen -= ret;
-            if (str->cgi.fcgiPaddingLen > 0)
+            s->cgi.timer = time(NULL);
+            s->cgi.fcgiPaddingLen -= ret;
+            if (s->cgi.fcgiPaddingLen > 0)
                 return 0;
         }
         
-        char s[8];
-        int ret = read(fd, s, 8);
+        char buf[8];
+        int ret = read(fd, buf, 8);
         if (ret != 8)
         {
             if ((ret == -1) && (errno == EAGAIN))
@@ -304,12 +302,12 @@ int fcgi_stdout(Stream *str, int fd)
             return -1;
         }
         
-        str->cgi.fcgi_type = s[1];
-        str->cgi.fcgiContentLen = ((unsigned char)s[4]<<8) | (unsigned char)s[5];
-        str->cgi.fcgiPaddingLen = (unsigned char)s[6];
-        if (str->cgi.fcgiContentLen == 0)
+        s->cgi.fcgi_type = buf[1];
+        s->cgi.fcgiContentLen = ((unsigned char)buf[4]<<8) | (unsigned char)buf[5];
+        s->cgi.fcgiPaddingLen = (unsigned char)buf[6];
+        if (s->cgi.fcgiContentLen == 0)
             return 0;
-        switch (str->cgi.fcgi_type)
+        switch (s->cgi.fcgi_type)
         {
             case FCGI_STDOUT:
                 break;
@@ -318,59 +316,59 @@ int fcgi_stdout(Stream *str, int fd)
             case FCGI_END_REQUEST:
                 break;
             default:
-                print_err("<%s:%d> Error fcgi type: %d\n", __func__, __LINE__, str->cgi.fcgi_type);
+                print_err("<%s:%d> Error fcgi type: %d\n", __func__, __LINE__, s->cgi.fcgi_type);
                 return -1;
         }
     }
     
-    if (str->cgi.fcgi_type == FCGI_STDOUT)
+    if (s->cgi.fcgi_type == FCGI_STDOUT)
     {
         char buf[16000];
-        int num_read = str->cgi.fcgiContentLen;
+        int num_read = s->cgi.fcgiContentLen;
         if (num_read > (int)sizeof(buf))
             num_read = sizeof(buf);
         int ret = read(fd, buf, num_read);
         if (ret > 0)
         {
-            str->cgi.fcgiContentLen -= ret;
-            str->buf.ncat(buf, ret);
-            str->cgi.timer = time(NULL);
-            str->cgi.read_from_cgi += ret;
+            s->cgi.fcgiContentLen -= ret;
+            s->buf.ncat(buf, ret);
+            s->cgi.timer = time(NULL);
+            s->cgi.read_from_cgi += ret;
         }
         else
             return -1;
     }
-    else if (str->cgi.fcgi_type == FCGI_STDERR)
+    else if (s->cgi.fcgi_type == FCGI_STDERR)
     {
         char buf[16000];
-        int num_read = str->cgi.fcgiContentLen;
+        int num_read = s->cgi.fcgiContentLen;
         if (num_read > (int)sizeof(buf))
             num_read = sizeof(buf);
         int ret = read(fd, buf, num_read);
         if (ret > 0)
         {
-            str->cgi.fcgiContentLen -= ret;
+            s->cgi.fcgiContentLen -= ret;
             fwrite(buf, 1, ret, stderr);
             fprintf(stderr, "\n");
-            str->cgi.timer = time(NULL);
-            str->cgi.read_from_cgi += ret;
+            s->cgi.timer = time(NULL);
+            s->cgi.read_from_cgi += ret;
         }
         else
             return -1;
     }
-    else if (str->cgi.fcgi_type == FCGI_END_REQUEST)
+    else if (s->cgi.fcgi_type == FCGI_END_REQUEST)
     {
         char buf[16];
-        int num_read = str->cgi.fcgiContentLen;
+        int num_read = s->cgi.fcgiContentLen;
         if (num_read > (int)sizeof(buf))
             num_read = sizeof(buf);
         int ret = read(fd, buf, num_read);
         if (ret > 0)
         {
-            str->cgi.fcgiContentLen -= ret;
-            str->cgi.end = true;
-            str->cgi.timer = time(NULL);
-            str->cgi.read_from_cgi += ret;
+            s->cgi.fcgiContentLen -= ret;
+            s->cgi.end = true;
+            s->cgi.timer = time(NULL);
+            s->cgi.read_from_cgi += ret;
         }
         else
             return -1;

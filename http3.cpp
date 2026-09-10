@@ -3,36 +3,6 @@
 using namespace std;
 
 //======================================================================
-int pow_(int x, int y)
-{
-    if (y < 0)
-        return -1;
-    int m = 1;
-    for (int i = 0; i < y; ++i)
-        m = m * x;
-    return m;
-}
-//======================================================================
-int bytes_to_int(unsigned char prefix, int pref_len, const char *s, int size, int *len)
-{
-    int data = pow_(2, pref_len) - 1;
-    if (prefix < data)
-        data = prefix;
-    else
-    {
-        unsigned char ch;
-        for (int i = 0; (*len) < size; ++i)
-        {
-            ch = s[(*len)++];
-            data = data + ((ch & 0x7f)<<(i*7));
-            if (!(ch & 0x80))
-                break;
-        }
-    }
-
-    return data;
-}
-//======================================================================
 int get_str(BytesArray *ba, int val_len, bool huffman, std::string& str, int *offset)
 {
     if ((val_len + *offset) > (int)ba->size())
@@ -99,12 +69,32 @@ int parse_headers(Stream *s)
 {
     if (conf->PrintLog)
     {
-        fprintf(stderr, "\n[%u/%u]<%s:%d> ----- HEADERS recv from client -----\n", s->num_conn, s->num_stream, __func__, __LINE__);
-        //hex_print_stderr(__func__, __LINE__, s->headers.ptr(), s->headers.size());
+        if (s->status == READ_HEADERS)
+            fprintf(stderr, "\n[%u/%u] ----- HEADERS recv from client -----\n", s->num_conn, s->num_stream);
+        else
+            fprintf(stderr, "\n[%u/%u] ----- HEADERS send to client -----\n", s->num_conn, s->num_stream);
+        hex_print_stderr(__func__, __LINE__, s->headers.ptr(), s->headers.size());
     }
 
-    int offset = 0;
-    int ch;
+    int offset = 1;
+
+    int ch = s->headers.get_byte(1);
+    switch (ch & 0xc0)
+    {
+        case 0:
+            offset += 1;
+            break;
+        case 0x40:
+            offset += 2;
+            break;
+        case 0x80:
+            offset += 4;
+            break;
+        case 0xc0:
+            offset += 8;
+            break;
+    }
+
     std::string name;
     std::string val;
 
@@ -117,7 +107,7 @@ int parse_headers(Stream *s)
             fprintf(stderr, "<%s:%d> Error ch=%d, 0x%X\n", __func__, __LINE__, ch, ch);
             return -1;
         }
-        //fprintf(stderr, "[0x%X] [%08b]\n", ch, ch);
+
         if (ch >= 0x80)                     // 4.5.2. Indexed Field Line
         {
             if (!(ch & 0x40))
@@ -176,50 +166,54 @@ int parse_headers(Stream *s)
         if (conf->PrintLog)
             fprintf(stderr, "[0x%02X] [%s: %s]\n", ch, name.c_str(), val.c_str());
 
-        if (name == ":method")
+        if (s->status == READ_HEADERS)
         {
-            s->method = val;
-            s->httpMethod = get_int_method(val.c_str());
-        }
-        else if (name == ":authority")
-        {
-            s->authority = val;
-        }
-        else if (name == "content-type")
-        {
-            s->content_type = val;
-        }
-        else if (name == "content-length")
-        {
-            s->content_length = val;
-            try
+            if (name == ":method")
             {
-                s->req_content_len = stoll(val, NULL, 10);
+                s->method = val;
+                s->httpMethod = get_int_method(val.c_str());
             }
-            catch (...)
+            else if (name == ":authority")
             {
-                print_err("<%s:%d> Error stoll(\"%s\")\n", __func__, __LINE__, val.c_str());
-                return -1;
+                s->authority = val;
             }
-        }
-        else if (name == "range")
-        {
-            s->range = val;
-        }
-        else if (name == ":path")
-        {
-            s->raw_path = val;
-        }
-        else if (name == "user-agent")
-        {
-            s->user_agent = val;
-        }
-        else if (name == "referer")
-        {
-            s->referer = val;
+            else if (name == "content-type")
+            {
+                s->content_type = val;
+            }
+            else if (name == "content-length")
+            {
+                s->content_length = val;
+                try
+                {
+                    s->req_content_len = stoll(val, NULL, 10);
+                }
+                catch (...)
+                {
+                    print_err("<%s:%d> Error stoll(\"%s\")\n", __func__, __LINE__, val.c_str());
+                    return -1;
+                }
+            }
+            else if (name == "range")
+            {
+                s->range = val;
+            }
+            else if (name == ":path")
+            {
+                s->raw_path = val;
+            }
+            else if (name == "user-agent")
+            {
+                s->user_agent = val;
+            }
+            else if (name == "referer")
+            {
+                s->referer = val;
+            }
         }
     }
 
+    s->headers.init();
     if (conf->PrintLog)
         fprintf(stderr, "\n");
     return 0;
@@ -233,8 +227,6 @@ int Server::create_response(Connect *c, Stream *s)
         create_error_message(s, RS500, "<h2>500 Internal Server Error</h2>");
         return -1;
     }
-
-    s->headers.init();
 
     int path_len = 0;
     s->decode_query_string = "";
@@ -272,9 +264,9 @@ int Server::create_response(Connect *c, Stream *s)
         s->source_data = DYN_PAGE;
         s->cgi.type = CGI;
         if ((s->httpMethod == M_POST) && (s->req_content_len > 0))
-            s->status = READ_DATA;
+            set_stream_status(s, READ_DATA);
         else
-            s->status = SEND_HEADERS;
+            set_stream_status(s, SEND_HEADERS);
         return 0;
     }
     else if (strstr(s->decode_path.c_str(), ".php"))
@@ -285,14 +277,14 @@ int Server::create_response(Connect *c, Stream *s)
         {
             s->cgi.type = PHPCGI;
             if ((s->httpMethod == M_POST) && (s->req_content_len > 0))
-                s->status = READ_DATA;
+                set_stream_status(s, READ_DATA);
             else
-                s->status = SEND_HEADERS;
+                set_stream_status(s, SEND_HEADERS);
         }
         else if (conf->UsePHP == "php-fpm")
         {
             s->cgi.type = PHPFPM;
-            s->status = SEND_PARAM;
+            set_stream_status(s, SEND_PARAM);
         }
         else
         {
@@ -336,6 +328,7 @@ int Server::create_response(Connect *c, Stream *s)
             s->resp_status = RS200;
         }
 
+        set_stream_status(s, SEND_HEADERS);
         if (s->resp_status == RS206)
             headers_create(s, RS206, 4);
         else
@@ -354,7 +347,6 @@ int Server::create_response(Connect *c, Stream *s)
         }
 
         frame_set_size(&s->headers);
-        s->status = SEND_HEADERS;
         s->file_size = s->resp_content_len;
 
         s->fd = open(s->full_path.c_str(), O_RDONLY | O_CLOEXEC);
@@ -374,13 +366,13 @@ int Server::create_response(Connect *c, Stream *s)
     {
         if (s->decode_path[s->decode_path.size() - 1] != '/')
         {
+            set_stream_status(s, SEND_HEADERS);
+            s->source_data = FROM_DATA_BUFFER;
             s->raw_path += '/';
             string loc = "<h2>301 Moved</h2>\n";
             loc += "The document has moved ";
             loc += "<a href=\"" + s->raw_path + "\">here</a>";
             create_html(&s->buf, loc.c_str(), "301 Moved");
-            s->status = SEND_HEADERS;
-            s->source_data = FROM_DATA_BUFFER;
 
             headers_create(s, 301, 4);
             header_add(s, 12, s->raw_path.c_str());   // 12 "location"
@@ -390,6 +382,7 @@ int Server::create_response(Connect *c, Stream *s)
         }
         else
         {
+            set_stream_status(s, SEND_HEADERS);
             int err = index_dir(c, s->full_path.c_str(), s->decode_path.c_str(), &s->buf);
             if (err)
             {
@@ -398,7 +391,6 @@ int Server::create_response(Connect *c, Stream *s)
             }
             else
             {
-                s->status = SEND_HEADERS;
                 s->source_data = FROM_DATA_BUFFER;
                 headers_create(s, RS200, 4);
                 header_add(s, 4, s->buf.size());    // 4 "content-length"
@@ -488,6 +480,8 @@ int read_head_frame(Stream *s)
         return ret;
     }
 
+    if (s->status == READ_HEADERS)
+        s->headers.ncpy(buf, ret);
     s->frame_type = (HTTP3_FRAME_TYPE)type;
     return 1;
 }
@@ -756,34 +750,6 @@ int Server::connect_shutdown(Connect *c, const char *func, int line)
     return 0;
 }
 //======================================================================
-int int_to_bytes(BytesArray& buf, int data, int pref_len, int huff_coding_mask)
-{
-    int ret = 0;
-
-    if (data < (pow_(2, pref_len) - 1))
-    {
-        buf.bytecat((data | huff_coding_mask));
-        ++ret;
-    }
-    else
-    {
-        buf.bytecat((pow_(2, pref_len) - 1) | huff_coding_mask);
-        ++ret;
-        data = data - (pow_(2, pref_len) - 1);
-        while (data > 128)
-        {
-            buf.bytecat(data % 128 + 128);
-            ++ret;
-            data = data / 128;
-        }
-
-        buf.bytecat((char)data);
-        ++ret;
-    }
-
-    return ret;
-}
-//======================================================================
 void add_header_name(BytesArray *ba, const char *name)
 {
     int name_len = strlen(name);
@@ -865,6 +831,10 @@ int headers_create(Stream *s, int status, int size_bytes_num)
     s->headers.bytecat(0x56);              // 6  "date"  ""
     string date = get_time();
     add_header_val(&s->headers, date.c_str());
+
+    char buf[64];
+    snprintf(buf, sizeof(buf), "h3=\":%s\"", conf->ServerPort.c_str());
+    header_add(s, 83, buf); // 83 "alt-svc"
 
     header_add(s, "count_connect", s->num_conn);
     header_add(s, "count_streams", s->num_stream);
@@ -951,7 +921,6 @@ void frame_set_size(BytesArray *ba)
     }
 
     ba->set_byte(size | mask, 1);
-    //hex_print_stderr(__func__, __LINE__, ba->ptr(), ba->size());
 }
 //======================================================================
 void create_html(BytesArray *ba, const char *msg, const char *title)
@@ -972,16 +941,14 @@ void create_html(BytesArray *ba, const char *msg, const char *title)
 //======================================================================
 void create_error_message(Stream *s, int status, const char *msg)
 {
+    set_stream_status(s, SEND_HEADERS);
+    s->source_data = FROM_DATA_BUFFER;
     create_html(&s->buf, msg, "Error");
-
     headers_create(s, status, 4);
     header_add(s, 44, "text/html");
     header_add(s, 4, s->buf.size()); // 4 "content-length"
     frame_set_size(&s->headers);
-    s->status = SEND_HEADERS;
-    s->source_data = FROM_DATA_BUFFER;
     s->stream_timer = time(NULL);
-    s->data.init();
 }
 //======================================================================
 int cgi_parse_headers(Connect* c, Stream *resp, bool lower_case)
@@ -989,7 +956,6 @@ int cgi_parse_headers(Connect* c, Stream *resp, bool lower_case)
     const int MAX_HEADER_LEN = 512;
     const char *p = resp->buf.ptr_remain();
     unsigned int size = resp->buf.size_remain();
-
     char name[512];
     char val[512];
     name[0] = 0;
@@ -1104,7 +1070,6 @@ int cgi_parse_headers(Connect* c, Stream *resp, bool lower_case)
                 }
                 else
                 {
-                    // add header
                     header_add(&resp->cgi.headers, name, val);
                 }
                 
@@ -1162,97 +1127,6 @@ int status_to_index(Stream *s, int status)
 
     //header_add(s, ":status", status);
     header_add(s, 24, status);
-    return 0;
-}
-//======================================================================
-int parse_server_headers(Stream *str, int n)
-{
-    if (conf->PrintLog)
-    {
-        fprintf(stderr, "\n[%u/%u]<%s:%d> ----- HEADERS send to client -----\n", str->num_conn, str->num_stream, __func__, __LINE__);
-        //hex_print_stderr(__func__, __LINE__, ba->ptr(), ba->size());
-    }
-
-    BytesArray *ba = &str->headers;
-
-    int offset = 0;
-    int ch;
-    std::string name;
-    std::string val;
-
-    offset += n;
-    offset += 2;
-    
-    for ( int i = 0; (offset < (int)ba->size()) && (i < 2); )
-    {
-        if ((ch = ba->get_byte(offset++)) < 0)
-        {
-            fprintf(stderr, "<%s:%d> Error ch=%d, 0x%X\n", __func__, __LINE__, ch, ch);
-            return -1;
-        }
-
-        if (ch >= 0x80)                     // 4.5.2. Indexed Field Line
-        {
-            if (!(ch & 0x40))
-            {
-                fprintf(stderr, "<%s:%d> [0x%02X] Dynamic Table is not created\n", __func__, __LINE__, ch);
-                return -1;
-            }
-
-            int ind = bytes_to_int(ch & 0x3f, 6, ba->ptr(), ba->size(), &offset);
-            if ((ind >= 0) && (ind <= 98))
-            {
-                name = static_tab[ind][0];
-                val = static_tab[ind][1];
-            }
-            else
-            {
-                fprintf(stderr, "<%s:%d> Error index=%d\n", __func__, __LINE__, ind);
-                return -1;
-            }
-        }
-        else if ((ch >= 0x20) && (ch <= 0x3f)) // 4.5.6. Literal Field Line with Literal Name
-        {
-            int name_len = bytes_to_int(ch & 0x07, 3, ba->ptr(), ba->size(), &offset);
-            if (get_str(ba, name_len, ch & 0x08, name, &offset) < 0)
-                return -1;
-            if (get_str(ba, val, &offset) < 0)
-                    return -1;
-        }
-        else if ((ch >= 0x40) && (ch <= 0x7f)) // 4.5.4. Literal Field Line with Name Reference
-        {
-            if (!(ch & 0x10))
-            {
-                fprintf(stderr, "<%s:%d> [0x%02X] Dynamic Table is not created\n", __func__, __LINE__, ch);
-                return -1;
-            }
-
-            int ind = bytes_to_int(ch & 0x0f, 4, ba->ptr(), ba->size(), &offset);
-            if ((ind >= 0) && (ind < 98))
-            {
-                name = static_tab[ind][0];
-                if (get_str(ba, val, &offset) < 0)
-                    return -1;
-            }
-            else
-            {
-                fprintf(stderr, "<%s:%d> Error ind=%d\n", __func__, __LINE__, ind);
-                return -1;
-            }
-        }
-        else
-        {
-            fprintf(stderr, "<%s:%d> Error [0x%02X]\n", __func__, __LINE__, ch);
-            return -1;
-        }
-
-        if (conf->PrintLog)
-            fprintf(stderr, "[0x%02X] [%s: %s]\n", ch, name.c_str(), val.c_str());
-            //fprintf(stderr, "[0x%02X] [%08b] [%s: %s]\n", ch, ch, name.c_str(), val.c_str());
-    }
-
-    if (conf->PrintLog)
-        fprintf(stderr, "\n");
     return 0;
 }
 //======================================================================

@@ -34,6 +34,64 @@ long long file_size(const char *s)
         return -1;
 }
 //======================================================================
+int pow_(int x, int y)
+{
+    if (y < 0)
+        return -1;
+    int m = 1;
+    for (int i = 0; i < y; ++i)
+        m = m * x;
+    return m;
+}
+//======================================================================
+int bytes_to_int(unsigned char prefix, int pref_len, const char *s, int size, int *len)
+{
+    int data = pow_(2, pref_len) - 1;
+    if (prefix < data)
+        data = prefix;
+    else
+    {
+        unsigned char ch;
+        for (int i = 0; (*len) < size; ++i)
+        {
+            ch = s[(*len)++];
+            data = data + ((ch & 0x7f)<<(i*7));
+            if (!(ch & 0x80))
+                break;
+        }
+    }
+
+    return data;
+}
+//======================================================================
+int int_to_bytes(BytesArray& buf, int data, int pref_len, int huff_coding_mask)
+{
+    int ret = 0;
+
+    if (data < (pow_(2, pref_len) - 1))
+    {
+        buf.bytecat((data | huff_coding_mask));
+        ++ret;
+    }
+    else
+    {
+        buf.bytecat((pow_(2, pref_len) - 1) | huff_coding_mask);
+        ++ret;
+        data = data - (pow_(2, pref_len) - 1);
+        while (data > 128)
+        {
+            buf.bytecat(data % 128 + 128);
+            ++ret;
+            data = data / 128;
+        }
+
+        buf.bytecat((char)data);
+        ++ret;
+    }
+
+    return ret;
+}
+//======================================================================
 SOURCE_DATA get_source_data(const char *path)
 {
     struct stat st;
@@ -49,6 +107,32 @@ SOURCE_DATA get_source_data(const char *path)
         return FROM_FILE;
     else
         return NO_SOURCE;
+}
+//======================================================================
+void set_stream_status(Stream *s, STREAM_STATUS status)
+{
+    switch ((int)status)
+    {
+        //case READ_HEADERS:
+        //    break;
+        //case SEND_PARAM:
+        //    break;
+        case READ_DATA:
+            s->data.init();
+            break;
+        case SEND_HEADERS:
+            s->buf.init();
+            s->headers.init();
+            break;
+        case SEND_DATA:
+            s->data.init();
+            break;
+        //case STREAM_CLOSE:
+        //    break;
+    }
+
+    s->stream_timer = time(NULL);
+    s->status = status;
 }
 //======================================================================
 int strlcmp_case(const char *s1, const char *s2, int len)
@@ -447,4 +531,68 @@ void hex_print_stderr(const char *s, int line, const void *p, int n)
     }
 
     //fprintf(stderr, "\n");
+}
+//======================================================================
+const char *get_str_status(int st)
+{
+    switch (st)
+    {
+        case 0:
+            return "";
+        case RS101:
+            return "101 Switching Protocols";
+        case RS200:
+            return "200 OK";
+        case RS204:
+            return "204 No Content";
+        case RS206:
+            return "206 Partial Content";
+        case RS301:
+            return "301 Moved Permanently";
+        case RS302:
+            return "302 Moved Temporarily";
+        case RS400:
+            return "400 Bad Request";
+        case RS401:
+            return "401 Unauthorized";
+        case RS402:
+            return "402 Payment Required";
+        case RS403:
+            return "403 Forbidden";
+        case RS404:
+            return "404 Not Found";
+        case RS405:
+            return "405 Method Not Allowed";
+        case RS406:
+            return "406 Not Acceptable";
+        case RS407:
+            return "407 Proxy Authentication Required";
+        case RS408:
+            return "408 Request Timeout";
+        case RS411:
+            return "411 Length Required";
+        case RS413:
+            return "413 Request entity too large";
+        case RS414:
+            return "414 Request-URI Too Large";
+        case RS416:
+            return "416 Range Not Satisfiable";
+        case RS429:
+            return "429 Too Many Requests";
+        case RS500:
+            return "500 Internal Server Error";
+        case RS501:
+            return "501 Not Implemented";
+        case RS502:
+            return "502 Bad Gateway";
+        case RS503:
+            return "503 Service Unavailable";
+        case RS504:
+            return "504 Gateway Time-out";
+        case RS505:
+            return "505 HTTP Version not supported";
+        default:
+            return "500 Internal Server Error";
+    }
+    return "";
 }

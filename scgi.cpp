@@ -38,21 +38,21 @@ static int scgi_add_param(Stream *s, const char *name, const char *val, int len_
         len_val = 0;
 
     int len = len_name + len_val + 2;
-    if ((len + s->params.size()) > 16000)
+    if ((len + s->cgi.params.size()) > 16000)
     {
         print_err("[%d/%d]<%s:%d> Error: name=NULL\n", s->num_conn, s->num_stream, __func__, __LINE__);
         return -1;
     }
 
-    s->params.ncat(name, len_name);
-    s->params.ncat("\0", 1);
+    s->cgi.params.ncat(name, len_name);
+    s->cgi.params.ncat("\0", 1);
 
     if (len_val > 0)
     {
-        s->params.ncat(val, len_val);
+        s->cgi.params.ncat(val, len_val);
     }
 
-    s->params.ncat("\0", 1);
+    s->cgi.params.ncat("\0", 1);
 
     return 0;
 }
@@ -60,8 +60,8 @@ static int scgi_add_param(Stream *s, const char *name, const char *val, int len_
 static int scgi_create_params(Connect *c, Stream *s)
 {
     int ret = 0;
-    s->params.ncpy("\0\0\0\0\0\0\0\0", 8);
-    s->params.reserve(768);
+    s->cgi.params.ncpy("\0\0\0\0\0\0\0\0", 8);
+    s->cgi.params.reserve(768);
 
     if (s->httpMethod == M_POST)
     {
@@ -165,20 +165,20 @@ static int scgi_create_params(Connect *c, Stream *s)
         return -1;
     }
 
-    if (scgi_set_size_data(&s->params) < 0)
+    if (scgi_set_size_data(&s->cgi.params) < 0)
     {
         print_err(c, "<%s:%d> Error scgi_set_size_data()\n", __func__, __LINE__);
         create_error_message(s, RS502, "<h2>502 Bad Gateway</h2>");
         return -1;
     }
 
-    s->status = SEND_PARAM;
+    set_stream_status(s, SEND_PARAM);
     return 0;
 }
 //======================================================================
 int cgi_send_param(Stream *s)
 {
-    int ret = write(s->cgi.fd, s->params.ptr_remain(), s->params.size_remain());
+    int ret = write(s->cgi.fd, s->cgi.params.ptr_remain(), s->cgi.params.size_remain());
     if (ret < 0)
     {
         if (errno == EAGAIN)
@@ -191,29 +191,28 @@ int cgi_send_param(Stream *s)
     }
 
     s->cgi.timer = time(NULL);
-    s->params.inc_offset(ret);
-    if (s->params.size_remain() == 0)
+    s->cgi.params.inc_offset(ret);
+    if (s->cgi.params.size_remain() == 0)
     {
-        s->params.init();
+        s->cgi.params.init();
         s->buf.init();
         if (s->cgi.type == SCGI)
         {
             if (s->httpMethod == M_POST)
             {
                 if ((s->req_content_len <= 0) && (s->buf.size() == 0))
-                    s->status = SEND_HEADERS;
+                    set_stream_status(s, SEND_HEADERS);
                 else
-                    s->status = READ_DATA;
+                    set_stream_status(s, READ_DATA);
             }
             else
             {
-                s->status = SEND_HEADERS;
+                set_stream_status(s, SEND_HEADERS);
             }
         }
         else if ((s->cgi.type == PHPFPM) || (s->cgi.type == FASTCGI)) 
         {
-            s->data.init();
-            s->status = READ_DATA;
+            set_stream_status(s, READ_DATA);
         }
     }
 
@@ -238,6 +237,6 @@ int scgi_create_connect(Connect *c, Stream *s)
         ioctl(s->cgi.fd, FIONBIO, &opt);
     }
 
-    s->status = SEND_PARAM;
+    set_stream_status(s, SEND_PARAM);
     return 0;
 }

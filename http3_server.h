@@ -92,8 +92,7 @@ enum STREAM_STATUS
     READ_DATA = 0x4,
     SEND_HEADERS = 0x8,
     SEND_DATA = 0x10,
-    SEND_END = 0x20,
-    STREAM_CLOSE = 0x40,
+    STREAM_CLOSE = 0x20,
 };
 
 enum CONNECT_STATUS
@@ -202,14 +201,15 @@ struct Cgi
     const std::string *socket;
     int fd = -1;
 
+    BytesArray params;
+    BytesArray headers;
+
     int fcgi_type = 0;
     int fcgiContentLen = 0;
     int fcgiPaddingLen = 0;
 
     long long send_post_data = 0;
     long long read_from_cgi = 0;
-
-    BytesArray headers;
 
     ~Cgi()
     {
@@ -260,7 +260,7 @@ struct Stream
     std::string content_type;
     std::string content_length;
 
-    HTTP_METHOD httpMethod;
+    HTTP_METHOD httpMethod = M_NULL;
     long long req_content_len = 0;
 
     std::string decode_path;
@@ -268,18 +268,17 @@ struct Stream
     std::string query_string;
     std::string decode_query_string;
 
-    SOURCE_DATA source_data = NO_SOURCE;
-    int resp_status = RS200;
-
     BytesArray buf;
     BytesArray headers;
     BytesArray data;
-    BytesArray params;
+
+    SOURCE_DATA source_data = NO_SOURCE;
+    int resp_status = RS200;
+    long long resp_content_len = 0;
 
     int fd = -1;
     long long file_size = 0;
     long long offset = 0;
-    long long resp_content_len = 0;
 
     long long all_data_send = 0;
     long long data_send = 0;
@@ -508,7 +507,6 @@ int ssl_peek(SSL *ssl, char *buf, int buf_size, int *err);
 //=========================== http3.cpp ================================
 int parse_headers(Stream *s);
 int read_head_frame(Stream *s);
-int int_to_bytes(BytesArray& buf, int data, int pref_len, int huff_coding_mask);
 int headers_create(Stream *s, int status, int n);
 void header_add(Stream *s, int ind);
 void header_add(Stream *s, int ind, const char *val);
@@ -521,14 +519,17 @@ void create_html(BytesArray *ba, const char *msg, const char *title);
 void create_error_message(Stream *s, int status, const char *msg);
 int cgi_parse_headers(Connect* c, Stream *resp, bool lower_case);
 int status_to_index(Stream *s, int status);
-int parse_server_headers(Stream *s, int n);
 //=========================== socket.cpp ===============================
 int create_server_socket(const char *port);
 int create_cgi_socket(const char *script_path);
 //============================ util.cpp ================================
 std::string get_time();
 long long file_size(const char *s);
+int pow_(int x, int y);
+int bytes_to_int(unsigned char prefix, int pref_len, const char *s, int size, int *len);
+int int_to_bytes(BytesArray& buf, int data, int pref_len, int huff_coding_mask);
 SOURCE_DATA get_source_data(const char *path);
+void set_stream_status(Stream *str, STREAM_STATUS st);
 int strlcmp_case(const char *s1, const char *s2, int len);
 int strcmp_case(const char *s1, const char *s2);
 HTTP_METHOD get_int_method(const char *s);
@@ -539,6 +540,7 @@ const char *get_content_type(const char *s);
 int clean_path(std::string& path);
 int parse_range(const char *s, long long file_size, long long *offset, long long *content_length);
 void hex_print_stderr(const char *s, int line, const void *p, int n);
+const char *get_str_status(int st);
 //============================ config.cp ===============================
 int read_conf_file(const char *path_conf);
 //============================= log.cpp ================================
