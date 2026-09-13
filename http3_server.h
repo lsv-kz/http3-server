@@ -159,6 +159,8 @@ struct Config
     int MaxCgiProc = 5;
     int TimeoutCGI = 5;
 
+    long long ClientMaxBodySize = 1000000;
+
     bool ShowMediaFiles = false;
 
     fcgi_list_addr *fcgi_list = NULL;
@@ -207,9 +209,6 @@ struct Cgi
     int fcgi_type = 0;
     int fcgiContentLen = 0;
     int fcgiPaddingLen = 0;
-
-    long long send_post_data = 0;
-    long long read_from_cgi = 0;
 
     ~Cgi()
     {
@@ -271,6 +270,7 @@ struct Stream
     BytesArray buf;
     BytesArray headers;
     BytesArray data;
+    BytesArray post_data;
 
     SOURCE_DATA source_data = NO_SOURCE;
     int resp_status = RS200;
@@ -312,7 +312,7 @@ struct Stream
     }
 };
 
-void print_log(Stream *s);
+void print_log(Stream *s, std::string& client_ip);
 
 struct Connect
 {
@@ -321,6 +321,8 @@ struct Connect
 
     Stream *stream_start = NULL;
     Stream *stream_end = NULL;
+
+    std::string client_ip;
 
     unsigned int num_conn = 0;
     unsigned int num_stream = 0;
@@ -378,7 +380,7 @@ struct Connect
     void delete_stream(Stream *s)
     {
         if (s->status >= SEND_HEADERS)
-            print_log(s);
+            print_log(s, client_ip);
         if (s->prev)
         s->prev->next = s->next;
         else
@@ -442,6 +444,8 @@ struct Server
     struct pollfd *poll_fd = NULL;
 
     int num_accept_conn = 0;
+
+    int server_sock = -1;
 
     void add_to_list(Connect *c);
     void close_connect(Connect *c);

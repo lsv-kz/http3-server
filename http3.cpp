@@ -1,7 +1,6 @@
 #include "http3_server.h"
 
 using namespace std;
-
 //======================================================================
 int get_str(BytesArray *ba, int val_len, bool huffman, std::string& str, int *offset)
 {
@@ -70,9 +69,9 @@ int parse_headers(Stream *s)
     if (conf->PrintLog)
     {
         if (s->status == READ_HEADERS)
-            fprintf(stderr, "\n[%u/%u] ----- HEADERS recv from client -----\n", s->num_conn, s->num_stream);
+            fprintf(stderr, "\n[%u/%u]-[%s] ----- HEADERS recv from client -----\n", s->num_conn, s->num_stream, log_time().c_str());
         else
-            fprintf(stderr, "\n[%u/%u] ----- HEADERS send to client -----\n", s->num_conn, s->num_stream);
+            fprintf(stderr, "\n[%u/%u]-[%s] ----- HEADERS send to client -----\n", s->num_conn, s->num_stream, log_time().c_str());
         hex_print_stderr(__func__, __LINE__, s->headers.ptr(), s->headers.size());
     }
 
@@ -226,6 +225,15 @@ int Server::create_response(Connect *c, Stream *s)
     {
         create_error_message(s, RS500, "<h2>500 Internal Server Error</h2>");
         return -1;
+    }
+
+    if (s->req_content_len > conf->ClientMaxBodySize)
+    {
+        char buf[128];
+        snprintf(buf, sizeof(buf), "<h2>413 Request entity too large</h2>\n"
+        "<p>Maximum allowed upload size is %lld MB</p>\n", conf->ClientMaxBodySize/1000000);
+        create_error_message(s, 413, buf);
+        return 0;
     }
 
     int path_len = 0;
@@ -1072,7 +1080,7 @@ int cgi_parse_headers(Connect* c, Stream *resp, bool lower_case)
                 {
                     header_add(&resp->cgi.headers, name, val);
                 }
-                
+
                 resp->buf.inc_offset(i);
                 size = resp->buf.size_remain();
                 if (resp->buf.size_remain() == 0)

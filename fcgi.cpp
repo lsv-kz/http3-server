@@ -238,16 +238,18 @@ int fcgi_stdin(Stream *s)
 {
     if (s->data.size_remain() == 0)
     {
-        if (s->buf.size_remain())
+        if (s->post_data.size_remain())
         {
             s->data.ncpy("00000000", 8);
-            s->data.ncat(s->buf.ptr_remain(), s->buf.size_remain());
-            s->buf.init();
+            s->data.ncat(s->post_data.ptr_remain(), s->post_data.size_remain());
+            s->post_data.init();
             fcgi_set_header(&s->data, FCGI_STDIN);
         }
 
         if (s->req_content_len <= 0)
             s->data.ncat("\x01\x05\x00\x01\x00\x00\x00\x00", 8);
+        if (s->data.size_remain() == 0)
+            return 0;
     }
     
     int ret = write(s->cgi.fd, s->data.ptr_remain(), s->data.size_remain());
@@ -267,7 +269,7 @@ int fcgi_stdin(Stream *s)
     if (s->data.size_remain() == 0)
     {
         s->data.init();
-        if ((s->buf.size() == 0) && (s->req_content_len <= 0))
+        if ((s->post_data.size() == 0) && (s->req_content_len <= 0))
             set_stream_status(s, SEND_HEADERS);
     }
 
@@ -301,7 +303,7 @@ int fcgi_stdout(Stream *s, int fd)
                 return 0;
             return -1;
         }
-        
+
         s->cgi.fcgi_type = buf[1];
         s->cgi.fcgiContentLen = ((unsigned char)buf[4]<<8) | (unsigned char)buf[5];
         s->cgi.fcgiPaddingLen = (unsigned char)buf[6];
@@ -333,7 +335,6 @@ int fcgi_stdout(Stream *s, int fd)
             s->cgi.fcgiContentLen -= ret;
             s->buf.ncat(buf, ret);
             s->cgi.timer = time(NULL);
-            s->cgi.read_from_cgi += ret;
         }
         else
             return -1;
@@ -351,7 +352,6 @@ int fcgi_stdout(Stream *s, int fd)
             fwrite(buf, 1, ret, stderr);
             fprintf(stderr, "\n");
             s->cgi.timer = time(NULL);
-            s->cgi.read_from_cgi += ret;
         }
         else
             return -1;
@@ -368,7 +368,6 @@ int fcgi_stdout(Stream *s, int fd)
             s->cgi.fcgiContentLen -= ret;
             s->cgi.end = true;
             s->cgi.timer = time(NULL);
-            s->cgi.read_from_cgi += ret;
         }
         else
             return -1;

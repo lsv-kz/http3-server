@@ -200,7 +200,7 @@ int cgi_send_param(Stream *s)
         {
             if (s->httpMethod == M_POST)
             {
-                if ((s->req_content_len <= 0) && (s->buf.size() == 0))
+                if ((s->req_content_len <= 0) && (s->post_data.size() == 0))
                     set_stream_status(s, SEND_HEADERS);
                 else
                     set_stream_status(s, READ_DATA);
@@ -213,6 +213,8 @@ int cgi_send_param(Stream *s)
         else if ((s->cgi.type == PHPFPM) || (s->cgi.type == FASTCGI)) 
         {
             set_stream_status(s, READ_DATA);
+            if (s->req_content_len <= 0)
+                s->data.ncat("\x01\x05\x00\x01\x00\x00\x00\x00", 8);
         }
     }
 

@@ -155,7 +155,7 @@ void print_err(Connect *con, const char *format, ...)
     }
 }
 //======================================================================
-void print_log(Stream *s)
+void print_log(Stream *s, string& client_ip)
 {
     if (!s)
         return;
@@ -170,6 +170,8 @@ void print_log(Stream *s)
     str.cpy_int(s->num_conn);
     str.ncat("/", 1);
     str.cat_int(s->num_stream);
+    str.ncat(" - ", 3);
+    str.ncat(client_ip.c_str(), client_ip.size());
     str.ncat(" - [", 4);
     str.logtimecat();
     str.ncat("] \"", 3);

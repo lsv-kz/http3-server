@@ -476,6 +476,8 @@ static int read_conf_file(FILE *fconf)
                 c.TimeoutCGI = atoi(s2);
             else if ((!strcmp(s1, "MaxCgiProc")) && is_number(s2))
                 c.MaxCgiProc = atoi(s2);
+            else if ((!strcmp(s1, "ClientMaxBodySize")) && is_number(s2))
+                c.ClientMaxBodySize = atoll(s2);
             else if (!strcmp(s1, "ShowMediaFiles"))
             {
                 if (!strcmp_case(s2, "on"))

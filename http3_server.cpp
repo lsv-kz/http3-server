@@ -103,6 +103,7 @@ int main()
     printf("HTTP/3 server run port: %s, pid: %u. Waiting connect from clients ...\n", conf->ServerPort.c_str(), getpid());
 
     Server server;
+    server.server_sock = server_fd;
     server.event_loop(quic_listener, server_fd);
     server.close_connections();
 

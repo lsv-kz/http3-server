@@ -269,18 +269,17 @@ int cgi_create_proc(Connect *c, Stream *s)
 //======================================================================
 int cgi_stdin(Stream *s, int fd)
 {
-    if (s->buf.size())
+    if (s->post_data.size())
     {
-        int ret = write(fd, s->buf.ptr_remain(), s->buf.size_remain());
+        int ret = write(fd, s->post_data.ptr_remain(), s->post_data.size_remain());
         if (ret > 0)
         {
             s->cgi.timer = time(NULL);
-            s->buf.inc_offset(ret);
-            s->cgi.send_post_data += ret;
-            if (s->buf.size_remain() == 0)
-                s->buf.init();
+            s->post_data.inc_offset(ret);
+            if (s->post_data.size_remain() == 0)
+                s->post_data.init();
 
-            if ((s->req_content_len <= 0) && (s->buf.size() == 0))
+            if ((s->req_content_len <= 0) && (s->post_data.size() == 0))
             {
                 set_stream_status(s, SEND_HEADERS);
                 close(s->cgi.to_script);
@@ -289,10 +288,15 @@ int cgi_stdin(Stream *s, int fd)
         }
         else
         {
-            fprintf(stderr, "[%u/%u]<%s:%d> Error cgi_stdin()=%d\n", s->num_conn, s->num_stream, __func__, __LINE__, ret);
-            s->cgi.end = true;
-            create_error_message(s, RS502, "<h2>502 Bad Gateway</h2>");
-            return -1;
+            if (errno != EAGAIN)
+            {
+                fprintf(stderr, "[%u/%u]<%s:%d> Error cgi_stdin()=%d\n", s->num_conn, s->num_stream, __func__, __LINE__, ret);
+                s->cgi.end = true;
+                create_error_message(s, RS502, "<h2>502 Bad Gateway</h2>");
+                return -1;
+            }
+            else
+                return 0;
         }
     }
 
@@ -308,7 +312,6 @@ int cgi_stdout(Stream *s, int fd)
         buf[ret] = 0;
         s->buf.ncat(buf, ret);
         s->cgi.timer = time(NULL);
-        s->cgi.read_from_cgi += ret;
     }
     else if (ret == 0)
     {
@@ -386,7 +389,7 @@ int Server::cgi_handler()
         {
             if ((now - s->cgi.timer) >= conf->TimeoutCGI)
             {
-                fprintf(stderr, "[%u/%u]<%s:%d> CGI timeout %d sec\n", s->num_conn, s->num_stream, __func__, __LINE__, (int)(now - s->cgi.timer));
+                fprintf(stderr, "[%u/%u]-[%s]<%s> CGI timeout %d sec\n", s->num_conn, s->num_stream, log_time().c_str(), __func__, (int)(now - s->cgi.timer));
                 create_error_message(s, RS504, "<h2>504 Gateway Time-out</h2>");
             }
         }

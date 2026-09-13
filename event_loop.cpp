@@ -141,7 +141,15 @@ int Server::set_poll(int min_timeout)
                 }
 
                 if (SSL_pending(s->ssl))
-                    min_timeout = 0;
+                {
+                    if ((s->source_data == DYN_PAGE) && (s->status == READ_DATA))
+                    {
+                        if (s->post_data.size() < 16000)
+                            min_timeout = 0;
+                    }
+                    else
+                        min_timeout = 0;
+                }
             }
 
             if ((s->source_data == DYN_PAGE) && (s->cgi.end == false))
@@ -201,6 +209,7 @@ int Server::set_poll(int min_timeout)
                     }
                     else
                     {
+                        poll_fd[1 + cgi_stream_size].fd = -1;
                         if ((s->cgi.type == CGI) || (s->cgi.type == PHPCGI))
                         {
                             if (s->status == READ_DATA)
@@ -229,19 +238,32 @@ int Server::set_poll(int min_timeout)
                         }
                         else if ((s->cgi.type == PHPFPM) || (s->cgi.type == FASTCGI))
                         {
-                            if ((s->status == READ_DATA) || (s->status == SEND_PARAM))
+                            if (s->status == SEND_PARAM)
                             {
-                                poll_fd[1 + cgi_stream_size].fd = s->cgi.fd;
-                                poll_fd[1 + cgi_stream_size].events = POLLOUT;
+                                if (s->cgi.params.size())
+                                {
+                                    poll_fd[1 + cgi_stream_size].fd = s->cgi.fd;
+                                    poll_fd[1 + cgi_stream_size].events = POLLOUT;
+                                }
                             }
-                            else
+                            else if (s->status == READ_DATA)
+                            {
+                                if ((s->post_data.size()) || (s->data.size()))
+                                {
+                                    poll_fd[1 + cgi_stream_size].fd = s->cgi.fd;
+                                    poll_fd[1 + cgi_stream_size].events = POLLOUT;
+                                }
+                            }
+                            else if ((s->status == SEND_HEADERS) || (s->status == SEND_DATA))
                             {
                                 poll_fd[1 + cgi_stream_size].fd = s->cgi.fd;
                                 poll_fd[1 + cgi_stream_size].events = POLLIN;
                             }
                         }
     
-                        cgi_stream[cgi_stream_size++] = s;
+                        if (poll_fd[1 + cgi_stream_size].fd > 0)
+                            cgi_stream[cgi_stream_size++] = s;
+
                         if (min_timeout > conf->TimeoutCGI)
                             min_timeout = conf->TimeoutCGI;
                     }
@@ -294,6 +316,9 @@ void Server::event_loop(SSL *quic_listener, int socket_fd)
         {
             poll_timeout = set_poll(poll_timeout);
             poll_num += cgi_stream_size;
+
+            //if (poll_timeout > 10)
+            //    poll_timeout = 0;
         }
 
         int ret = poll(poll_fd, poll_num, poll_timeout);
@@ -313,6 +338,20 @@ void Server::event_loop(SSL *quic_listener, int socket_fd)
             cgi_handler();
         }
 
+        socklen_t addr_size = 0;
+        struct sockaddr_storage client_addr;
+        if (poll_fd[0].revents & POLLIN)
+        {
+            addr_size = sizeof(struct sockaddr_storage);
+            char buf[8];
+            ret = recvfrom(server_sock, buf, sizeof(buf), MSG_PEEK, (struct sockaddr *)&client_addr, &addr_size);
+            if (ret < 1)
+            {
+                addr_size = 0;
+                //fprintf(stdout, "*<%s:%d> !!! Error recvfrom()=%d\n", __func__, __LINE__, ret);
+            }
+        }
+
         if (SSL_handle_events(quic_listener) <= 0)
         {
             print_err("<%s:%d> The connection was closed or an error occurred.\n", __func__, __LINE__);
@@ -330,10 +369,26 @@ void Server::event_loop(SSL *quic_listener, int socket_fd)
                 new_conn->ssl_conn = ssl_conn;
                 new_conn->quic_listener = quic_listener;
                 new_conn->num_conn = ++num_conn;
-                print_err(new_conn, "========= Create new Connect =========\n");
-                fprintf(stdout, "[%s] ========= Create new Connect [%u] =========\n", log_time().c_str(), num_conn);
                 new_conn->conn_timer = time(NULL);
                 add_to_list(new_conn);
+
+                if (addr_size > 0)
+                {
+                    char remote_port[1024];
+                    char remote_addr[1024] = "x.x.x.x";
+                    getnameinfo((struct sockaddr *)&client_addr, 
+                        addr_size, 
+                        remote_addr, 
+                        sizeof(remote_addr), 
+                        remote_port, 
+                        sizeof(remote_port), 
+                        NI_NUMERICHOST | NI_NUMERICSERV);
+                    new_conn->client_ip = remote_addr;
+    
+                }
+
+                fprintf(stdout, "[%u]-[%s] === Create new Connect [%s] ===\n", num_conn, log_time().c_str(), new_conn->client_ip.c_str());
+                fprintf(stderr, "[%u]-[%s] === Create new Connect [%s] ===\n", num_conn, log_time().c_str(), new_conn->client_ip.c_str());
             }
         }
 
@@ -552,7 +607,7 @@ int Server::stream_handler(Connect *c, Stream *s)
         close_stream(c, s);
         return 0;
     }
-    else if (s->status & (READ_HEADERS | READ_DATA))
+    else if ((s->status & (READ_HEADERS | READ_DATA)) || (s->req_content_len && (s->status > SEND_PARAM)))
     {
         int pend = SSL_pending(s->ssl);
         if (pend == 0)
@@ -579,7 +634,10 @@ int Server::stream_handler(Connect *c, Stream *s)
 
         if (s->frame_size)
         {
-            char buf[1024];
+            if ((s->status == READ_DATA) && (s->post_data.size() > 1000000))
+                return 0;
+
+            char buf[16000];
             int nread = s->frame_size;
             if (nread > (int)sizeof(buf))
                 nread = sizeof(buf);
@@ -600,9 +658,11 @@ int Server::stream_handler(Connect *c, Stream *s)
                 {
                     if (s->httpMethod == M_NULL)
                         fprintf(stderr, "[%u/%u] Error: HEADERS frame not received\n", s->num_conn, s->num_stream);
-                    s->buf.ncat(buf, ret);
+                    s->post_data.ncat(buf, ret);
                     s->frame_size -= ret;
                     s->req_content_len -= ret;
+                    if ((s->status != READ_DATA) && (s->post_data.size() > 1500000))
+                        s->post_data.init();
                 }
                 else
                 {
@@ -743,7 +803,7 @@ int Server::stream_handler(Connect *c, Stream *s)
                     s->data.ncpy("\x0\x80\x00\x00\x00", 5);
                     s->data.ncat(s->buf.ptr_remain(), n);
                     frame_set_size(&s->data);
-                    
+
                     s->buf.inc_offset(n);
                     if (s->buf.size_remain() == 0)
                         s->buf.init();
