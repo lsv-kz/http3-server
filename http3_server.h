@@ -447,6 +447,8 @@ struct Server
 
     int server_sock = -1;
 
+    BIO *bio;
+
     void add_to_list(Connect *c);
     void close_connect(Connect *c);
     int set_poll(int);
@@ -509,6 +511,7 @@ int ssl_read(SSL *ssl, char *buf, int buf_size, int *err);
 int ssl_write(SSL *ssl, const char *buf, int buf_size, int *err);
 int ssl_peek(SSL *ssl, char *buf, int buf_size, int *err);
 //=========================== http3.cpp ================================
+void get_client_ip(Connect *c);
 int parse_headers(Stream *s);
 int read_head_frame(Stream *s);
 int headers_create(Stream *s, int status, int n);

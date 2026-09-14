@@ -107,8 +107,8 @@ int Server::set_poll(int min_timeout)
         }
         else
         {
-            fprintf(stderr, "[%s]!!!<%s:%d> timeout=%d\n", log_time().c_str(), __func__, __LINE__, timeout);
-            fprintf(stdout, "[%s]!!!<%s:%d> timeout=%d\n", log_time().c_str(), __func__, __LINE__, timeout);
+            fprintf(stderr, "[%s]!!!<%s:%d> timeout=%d, min_timeout=%d\n", log_time().c_str(), __func__, __LINE__, timeout, min_timeout);
+            fprintf(stdout, "[%s]!!!<%s:%d> timeout=%d, min_timeout=%d\n", log_time().c_str(), __func__, __LINE__, timeout, min_timeout);
         }
 
         if (min_timeout > conf->TimeOut)
@@ -338,18 +338,13 @@ void Server::event_loop(SSL *quic_listener, int socket_fd)
             cgi_handler();
         }
 
-        socklen_t addr_size = 0;
-        struct sockaddr_storage client_addr;
-        if (poll_fd[0].revents & POLLIN)
+        BIO_ctrl(bio, BIO_CTRL_DGRAM_SET_PEEK_MODE, 1, NULL);
+        char buf[32000];
+        ret = BIO_read(bio, buf, sizeof(buf));
+        BIO_ctrl(bio, BIO_CTRL_DGRAM_SET_PEEK_MODE, 0, NULL);
+        if (ret > 0)
         {
-            addr_size = sizeof(struct sockaddr_storage);
-            char buf[8];
-            ret = recvfrom(server_sock, buf, sizeof(buf), MSG_PEEK, (struct sockaddr *)&client_addr, &addr_size);
-            if (ret < 1)
-            {
-                addr_size = 0;
-                //fprintf(stdout, "*<%s:%d> !!! Error recvfrom()=%d\n", __func__, __LINE__, ret);
-            }
+            //fprintf(stdout, "*<%s:%d> !!! recvfrom()=%d\n", __func__, __LINE__, ret);
         }
 
         if (SSL_handle_events(quic_listener) <= 0)
@@ -371,22 +366,7 @@ void Server::event_loop(SSL *quic_listener, int socket_fd)
                 new_conn->num_conn = ++num_conn;
                 new_conn->conn_timer = time(NULL);
                 add_to_list(new_conn);
-
-                if (addr_size > 0)
-                {
-                    char remote_port[1024];
-                    char remote_addr[1024] = "x.x.x.x";
-                    getnameinfo((struct sockaddr *)&client_addr, 
-                        addr_size, 
-                        remote_addr, 
-                        sizeof(remote_addr), 
-                        remote_port, 
-                        sizeof(remote_port), 
-                        NI_NUMERICHOST | NI_NUMERICSERV);
-                    new_conn->client_ip = remote_addr;
-    
-                }
-
+                get_client_ip(new_conn);
                 fprintf(stdout, "[%u]-[%s] === Create new Connect [%s] ===\n", num_conn, log_time().c_str(), new_conn->client_ip.c_str());
                 fprintf(stderr, "[%u]-[%s] === Create new Connect [%s] ===\n", num_conn, log_time().c_str(), new_conn->client_ip.c_str());
             }
@@ -790,6 +770,11 @@ int Server::stream_handler(Connect *c, Stream *s)
                 {
                     SSL_stream_conclude(s->ssl, 0);
                     set_stream_status(s, STREAM_CLOSE);
+                    if (s->resp_status == RS413)
+                    {
+                        fprintf(stdout, "[%u/%u]<%s:%d>*************** s->resp_status=%d\n", s->num_conn, s->num_stream, __func__, __LINE__, s->resp_status);
+                    }
+
                     return 0;
                 }
             }

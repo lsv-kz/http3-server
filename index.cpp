@@ -231,7 +231,6 @@ static int create_index_html(Connect *c, vector<string>& list, int num_files, co
               " </body>\r\n"
               "</html>");
     free(file_path);
-fprintf(stderr, "<%s:%d> -----------------------\n", __func__, __LINE__);
     return 0;
 }
 //======================================================================

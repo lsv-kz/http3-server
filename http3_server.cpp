@@ -104,6 +104,7 @@ int main()
 
     Server server;
     server.server_sock = server_fd;
+    server.bio = bio;
     server.event_loop(quic_listener, server_fd);
     server.close_connections();
 

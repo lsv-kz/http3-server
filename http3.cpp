@@ -2,6 +2,34 @@
 
 using namespace std;
 //======================================================================
+void get_client_ip(Connect *c)
+{
+    BIO *rb = SSL_get_rbio(c->ssl_conn);
+    if (rb)
+    {
+        BIO_ADDR *peer_addr = BIO_ADDR_new();
+        int ret = BIO_dgram_detect_peer_addr(rb, peer_addr);
+        //int ret = BIO_dgram_get_peer(rb, peer_addr);
+        if (ret > 0)
+        {
+            char *ip_str = BIO_ADDR_hostname_string(peer_addr, 1);
+            if (ip_str)
+            {
+                c->client_ip = ip_str;
+                OPENSSL_free(ip_str);
+            }
+            else
+            {
+                fprintf(stdout, "<%s:%d> ip_str=NULL\n", __func__, __LINE__);
+            }
+        }
+        else
+        {
+            fprintf(stdout, "<%s:%d> BIO_dgram_get_peer()=%d\n", __func__, __LINE__, ret);
+        }
+    }
+}
+//======================================================================
 int get_str(BytesArray *ba, int val_len, bool huffman, std::string& str, int *offset)
 {
     if ((val_len + *offset) > (int)ba->size())
@@ -232,7 +260,7 @@ int Server::create_response(Connect *c, Stream *s)
         char buf[128];
         snprintf(buf, sizeof(buf), "<h2>413 Request entity too large</h2>\n"
         "<p>Maximum allowed upload size is %lld MB</p>\n", conf->ClientMaxBodySize/1000000);
-        create_error_message(s, 413, buf);
+        create_error_message(s, RS413, buf);
         return 0;
     }
 
@@ -1075,6 +1103,7 @@ int cgi_parse_headers(Connect* c, Stream *resp, bool lower_case)
                 if (!strcmp_case(name, "status"))
                 {
                     sscanf(val, "%d", &resp->resp_status);
+                    print_err(c, "<%s:%d> status: %s\n", __func__, __LINE__, val);
                 }
                 else
                 {
