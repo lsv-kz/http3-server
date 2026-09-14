@@ -350,15 +350,15 @@ void Server::event_loop(SSL *quic_listener, int socket_fd)
             SSL *ssl_conn = SSL_accept_connection(quic_listener, 0);
             if (ssl_conn)
             {
-                SSL_set_default_stream_mode(ssl_conn, SSL_DEFAULT_STREAM_MODE_NONE);
                 Connect *new_conn = new Connect;
                 new_conn->ssl_conn = ssl_conn;
                 new_conn->quic_listener = quic_listener;
                 new_conn->num_conn = ++num_conn;
                 new_conn->conn_timer = time(NULL);
                 add_to_list(new_conn);
-                fprintf(stdout, "[%u]-[%s] === Create new Connect [%s] ===\n", num_conn, log_time().c_str(), new_conn->client_ip.c_str());
-                fprintf(stderr, "[%u]-[%s] === Create new Connect [%s] ===\n", num_conn, log_time().c_str(), new_conn->client_ip.c_str());
+                SSL_set_default_stream_mode(ssl_conn, SSL_DEFAULT_STREAM_MODE_NONE);
+                fprintf(stdout, "[%u]-[%s] === Create new Connect ===\n", new_conn->num_conn, log_time().c_str());
+                fprintf(stderr, "[%u]-[%s] === Create new Connect ===\n", new_conn->num_conn, log_time().c_str());
             }
         }
 
@@ -383,7 +383,7 @@ void Server::connect_handler()
             close_connect(c);
             continue;
         }
-        
+
         c->wait_write = false;
 
         if ((now - c->conn_timer) >= conf->TimeOut)
