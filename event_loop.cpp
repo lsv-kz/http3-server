@@ -338,15 +338,6 @@ void Server::event_loop(SSL *quic_listener, int socket_fd)
             cgi_handler();
         }
 
-        BIO_ctrl(bio, BIO_CTRL_DGRAM_SET_PEEK_MODE, 1, NULL);
-        char buf[32000];
-        ret = BIO_read(bio, buf, sizeof(buf));
-        BIO_ctrl(bio, BIO_CTRL_DGRAM_SET_PEEK_MODE, 0, NULL);
-        if (ret > 0)
-        {
-            //fprintf(stdout, "*<%s:%d> !!! recvfrom()=%d\n", __func__, __LINE__, ret);
-        }
-
         if (SSL_handle_events(quic_listener) <= 0)
         {
             print_err("<%s:%d> The connection was closed or an error occurred.\n", __func__, __LINE__);
@@ -366,7 +357,6 @@ void Server::event_loop(SSL *quic_listener, int socket_fd)
                 new_conn->num_conn = ++num_conn;
                 new_conn->conn_timer = time(NULL);
                 add_to_list(new_conn);
-                get_client_ip(new_conn);
                 fprintf(stdout, "[%u]-[%s] === Create new Connect [%s] ===\n", num_conn, log_time().c_str(), new_conn->client_ip.c_str());
                 fprintf(stderr, "[%u]-[%s] === Create new Connect [%s] ===\n", num_conn, log_time().c_str(), new_conn->client_ip.c_str());
             }
