@@ -72,7 +72,7 @@ int parse_headers(Stream *s)
             fprintf(stderr, "\n[%u/%u]-[%s] ----- HEADERS recv from client -----\n", s->num_conn, s->num_stream, log_time().c_str());
         else
             fprintf(stderr, "\n[%u/%u]-[%s] ----- HEADERS send to client -----\n", s->num_conn, s->num_stream, log_time().c_str());
-        hex_print_stderr(__func__, __LINE__, s->headers.ptr(), s->headers.size());
+        //hex_print_stderr(__func__, __LINE__, s->headers.ptr(), s->headers.size());
     }
 
     int offset = 1;
@@ -569,7 +569,8 @@ int Server::accept_stream(Connect *c, int stream_num)
                     Stream *s = c->create_stream(c->tmp_stream);
                     if (s)
                     {
-                        //printf("[%u/%u]<%s:%d> Accept Stream\n", s->num_conn, s->num_stream, __func__, __LINE__);
+                        if (conf->PrintLog)
+                            printf("[%u/%u]<%s:%d> Accept Stream id=%ld\n", s->num_conn, s->num_stream, __func__, __LINE__, s->id);
                         c->tmp_stream = NULL;
                         ret = 1;
                     }

@@ -384,17 +384,40 @@ void Server::connect_handler()
             continue;
         }
 
+        if (c->goaway.size() && (c->status != CONNECT_SHUTDOWN))
+        {
+            int ret = ssl_write(c->ctrl_stream, c->goaway.ptr(), c->goaway.size(), NULL);
+            if (ret > 0)
+            {
+                print_err(c, "<%s:%d> send GOAWAY, ret=%d\n", __func__, __LINE__, ret);
+                printf("[%u]<%s:%d> send GOAWAY, ret=%d\n", c->num_conn, __func__, __LINE__, ret);
+                hex_print_stderr(__func__, __LINE__, c->goaway.ptr(), c->goaway.size());
+            }
+            else
+            {
+                print_err(c, "<%s:%d> Error send GOAWAY, %d\n", __func__, __LINE__, ret);
+                printf("[%u]<%s:%d> Error send GOAWAY, %d\n", c->num_conn, __func__, __LINE__, ret);
+            }
+
+            c->goaway.init();
+            c->conn_timer = now;
+            connect_shutdown(c, __func__, __LINE__);
+            continue;
+        }
+
         c->wait_write = false;
 
         if ((now - c->conn_timer) >= conf->TimeOut)
         {
-            print_err(c, "<%s:%d> ********* Timeout=%d *********\n", __func__, __LINE__, (int)(now - c->conn_timer));
-            printf("[%u]<%s:%d> ********* Timeout=%d *********\n", c->num_conn, __func__, __LINE__, (int)(now - c->conn_timer));
+            print_err(c, "********* Connection Timeout=%d *********\n", (int)(now - c->conn_timer));
+            printf("[%u]-[%s] ********* Connection Timeout=%d *********\n", c->num_conn, log_time().c_str(), (int)(now - c->conn_timer));
             if (c->status != CONNECT_SHUTDOWN)
             {
-                if (connect_shutdown(c, __func__, __LINE__))
-                    continue;
-                c->conn_timer = now;
+                c->goaway.ncpy("\x07", 1);
+                BytesArray buf;
+                int_to_bytes(buf, c->max_id, 8, 0);
+                int_to_bytes(c->goaway, buf.size(), 8, 0);
+                c->goaway.ncat(buf.ptr(), buf.size());
             }
             else
             {
@@ -572,7 +595,7 @@ int Server::stream_handler(Connect *c, Stream *s)
         close_stream(c, s);
         return 0;
     }
-    else if ((s->status & (READ_HEADERS | READ_DATA)) || (s->req_content_len && (s->status > SEND_PARAM)))
+    else if ((s->status & (READ_HEADERS | READ_DATA)))// || (s->req_content_len && (s->status > SEND_PARAM)))
     {
         int pend = SSL_pending(s->ssl);
         if (pend == 0)
@@ -813,6 +836,15 @@ int Server::stream_handler(Connect *c, Stream *s)
             c->size_send_frame_data += ret;
             s->data_send += (ret - 5);
             c->size_send_data += (ret - 5);
+
+            if (s->resp_status == RS413)
+            {
+                c->goaway.ncpy("\x07", 1);
+                BytesArray buf;
+                int_to_bytes(buf, c->max_id, 8, 0);
+                int_to_bytes(c->goaway, buf.size(), 8, 0);
+                c->goaway.ncat(buf.ptr(), buf.size());
+            }
 
             if (s->source_data == FROM_FILE)
             {

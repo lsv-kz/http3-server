@@ -328,6 +328,7 @@ struct Connect
     unsigned int num_stream = 0;
 
     int num_work_stream = 0;
+    long max_id = 0;
 
     time_t conn_timer = 0;
     bool wait_write = false;
@@ -355,6 +356,8 @@ struct Connect
     long long size_send_data = 0;
     long long size_send_frame_data = 0;
 
+    BytesArray goaway;
+
     Stream *create_stream(SSL *ssl)
     {
         Stream *s = new(std::nothrow) Stream;
@@ -364,6 +367,7 @@ struct Connect
         s->num_conn = num_conn;
         s->num_stream = ++num_stream;
         s->id = SSL_get_stream_id(s->ssl);
+        max_id = s->id;
         s->next = NULL;
         s->prev = stream_end;
         if (stream_end)
