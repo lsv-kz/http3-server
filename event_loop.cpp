@@ -392,16 +392,20 @@ void Server::connect_handler()
                 print_err(c, "<%s:%d> send GOAWAY, ret=%d\n", __func__, __LINE__, ret);
                 printf("[%u]<%s:%d> send GOAWAY, ret=%d\n", c->num_conn, __func__, __LINE__, ret);
                 hex_print_stderr(__func__, __LINE__, c->goaway.ptr(), c->goaway.size());
+                c->goaway.init();
+                c->conn_timer = now;
+                connect_shutdown(c, __func__, __LINE__);
             }
             else
             {
                 print_err(c, "<%s:%d> Error send GOAWAY, %d\n", __func__, __LINE__, ret);
                 printf("[%u]<%s:%d> Error send GOAWAY, %d\n", c->num_conn, __func__, __LINE__, ret);
+                if (ret == -1)
+                {
+                    close_connect(c);
+                }
             }
 
-            c->goaway.init();
-            c->conn_timer = now;
-            connect_shutdown(c, __func__, __LINE__);
             continue;
         }
 

@@ -627,7 +627,7 @@ int Server::create_uni_streams(Connect *c)
             }
             else
             {
-                fprintf(stderr, "<%s:%d> Create control stream_id=%lu\n", __func__, __LINE__, SSL_get_stream_id(c->ctrl_stream));
+                fprintf(stderr, "<%s:%d> Create Control Stream_id=%lu\n", __func__, __LINE__, SSL_get_stream_id(c->ctrl_stream));
             }
         }
 
@@ -639,7 +639,7 @@ int Server::create_uni_streams(Connect *c)
         }
         else// if (err > 0)
         {
-            fprintf(stderr, "<%s:%d> send SETTINGS to server %d bytes\n", __func__, __LINE__, err);
+            fprintf(stderr, "<%s:%d> send SETTINGS to client %d bytes\n", __func__, __LINE__, err);
         }
 
         c->create_ctrl = true;
@@ -954,7 +954,7 @@ void create_error_message(Stream *s, int status, const char *msg)
     s->source_data = FROM_DATA_BUFFER;
     create_html(&s->buf, msg, "Error");
     headers_create(s, status, 4);
-    header_add(s, 44, "text/html");
+    header_add(s, 44, "text/html");  // 44 "content-type"
     header_add(s, 4, s->buf.size()); // 4 "content-length"
     frame_set_size(&s->headers);
     s->stream_timer = time(NULL);

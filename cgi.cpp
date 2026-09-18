@@ -359,14 +359,10 @@ int Server::cgi_handler()
                 if ((s->cgi.type == CGI) || (s->cgi.type == PHPCGI))
                 {
                     cgi_stdout(s, s->cgi.from_script);
-                    if (poll_fd[1 + i].revents & POLLHUP)
-                        s->cgi.end = true;
                 }
                 else if (s->cgi.type == SCGI)
                 {
                     cgi_stdout(s, s->cgi.fd);
-                    if (poll_fd[1 + i].revents & POLLHUP)
-                        s->cgi.end = true;
                 }
                 else if ((s->cgi.type == PHPFPM) || (s->cgi.type == FASTCGI))
                 {
