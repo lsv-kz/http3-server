@@ -49,6 +49,7 @@ void Server::add_to_list(Connect *c)
 //======================================================================
 void Server::close_connect(Connect *c)
 {
+    ERR_clear_error();
     if (c->prev)
         c->prev->next = c->next;
     else
@@ -337,14 +338,14 @@ void Server::event_loop(SSL *quic_listener, int socket_fd)
         {
             cgi_handler();
         }
-
+/*
         if (SSL_handle_events(quic_listener) <= 0)
         {
             print_err("<%s:%d> The connection was closed or an error occurred.\n", __func__, __LINE__);
             ERR_print_errors_fp(stderr);
             break;
         }
-
+*/
         if (num_accept_conn < conf->MaxAcceptConnections)
         {
             SSL *ssl_conn = SSL_accept_connection(quic_listener, 0);
@@ -386,7 +387,7 @@ void Server::connect_handler()
 
         if (c->goaway.size() && (c->status != CONNECT_SHUTDOWN))
         {
-            int ret = ssl_write(c->ctrl_stream, c->goaway.ptr(), c->goaway.size(), NULL);
+            int ret = ssl_write(c->ctrl_stream, c->goaway.ptr(), c->goaway.size());
             if (ret > 0)
             {
                 print_err(c, "<%s:%d> send GOAWAY, ret=%d\n", __func__, __LINE__, ret);
@@ -407,6 +408,17 @@ void Server::connect_handler()
             }
 
             continue;
+        }
+
+        if (poll_fd[0].revents & POLLIN)
+        {
+            if (SSL_handle_events(c->ssl_conn) <= 0)
+            {
+                print_err("<%s:%d> Error SSL_handle_events(ssl_conn)\n", __func__, __LINE__);
+                ERR_print_errors_fp(stderr);
+                connect_shutdown(c, __func__, __LINE__);
+                continue;
+            }
         }
 
         c->wait_write = false;
@@ -436,8 +448,10 @@ void Server::connect_handler()
             int ret = SSL_get_conn_close_info(c->ssl_conn, &info, sizeof(info));
             if (ret == 1)
             {
-                if (connect_shutdown(c, __func__, __LINE__))
-                    continue;
+                printf("[%u]<%s:%d> Code: %lu, Flags: %u, [%s]\n", c->num_conn, __func__, __LINE__, info.error_code, info.flags, info.reason ? info.reason : "-");
+                print_err(c, "<%s:%d> Code: %lu, Flags: %u, [%s]\n", __func__, __LINE__, info.error_code, info.flags, info.reason ? info.reason : "-");
+                close_connect(c);
+                continue;
             }
         }
         else
@@ -498,27 +512,22 @@ void Server::connect_handler()
             }
         }
 
-        if (c->status == CONNECT_OK)
-        {
-            if ((!c->create_ctrl || !c->create_enc || !c->create_dec))
-                create_uni_streams(c);
+        if ((!c->create_ctrl || !c->create_enc || !c->create_dec))
+            create_uni_streams(c);
 
-            if (c->num_work_stream < conf->MaxWorkStreams)
+        if (c->num_work_stream < conf->MaxWorkStreams)
+        {
+            long n = SSL_get_accept_stream_queue_len(c->ssl_conn);
+            if ((n > 0) || c->tmp_stream)
             {
-                long n = SSL_get_accept_stream_queue_len(c->ssl_conn);
-                if ((n > 0) || c->tmp_stream)
+                int ret = accept_stream(c, n);
+                if (ret < 0)
                 {
-                    int ret = accept_stream(c, n);
-                    if (ret < 0)
-                    {
-                        close_connect(c);
-                        continue;
-                    }
+                    close_connect(c);
+                    continue;
                 }
             }
         }
-        else
-            continue;
 
         if (c->cl_ctrl_stream)
         {
@@ -526,12 +535,18 @@ void Server::connect_handler()
             if (pend)
             {
                 char buf[127];
-                int ret = ssl_read(c->cl_ctrl_stream, buf, sizeof(buf), NULL);
-                if (conf->PrintLog)
+                int ret = ssl_read(c->cl_ctrl_stream, buf, sizeof(buf));
+                if (ret > 0)
                 {
-                    print_err(c, "<%s:%d> !!! Control Stream pending %d bytes\n", __func__, __LINE__, pend);
-                    if (ret > 0)
+                    if (conf->PrintLog)
+                    {
+                        print_err(c, "<%s:%d> !!! Control Stream pending %d bytes\n", __func__, __LINE__, pend);
                         hex_print_stderr(__func__, __LINE__, buf, ret);
+                    }
+                }
+                else if (ret == -1)
+                {
+                    print_err(c, "<%s:%d> !!! Error: Control Stream ssl_read()=%d\n", __func__, __LINE__, ret);
                 }
             }
         }
@@ -542,12 +557,18 @@ void Server::connect_handler()
             if (pend)
             {
                 char buf[127];
-                int ret = ssl_read(c->cl_enc_stream, buf, sizeof(buf), NULL);
-                if (conf->PrintLog)
+                int ret = ssl_read(c->cl_enc_stream, buf, sizeof(buf));
+                if (ret > 0)
                 {
-                    print_err(c, "<%s:%d> !!! Encoder Stream pending %d bytes\n", __func__, __LINE__, pend);
-                    if (ret > 0)
+                    if (conf->PrintLog)
+                    {
+                        print_err(c, "<%s:%d> !!! Encoder Stream pending %d bytes\n", __func__, __LINE__, pend);
                         hex_print_stderr(__func__, __LINE__, buf, ret);
+                    }
+                }
+                else if (ret == -1)
+                {
+                    print_err(c, "<%s:%d> !!! Error: Encoder Stream ssl_read()=%d\n", __func__, __LINE__, ret);
                 }
             }
         }
@@ -558,12 +579,18 @@ void Server::connect_handler()
             if (pend)
             {
                 char buf[127];
-                int ret = ssl_read(c->cl_dec_stream, buf, sizeof(buf), NULL);
-                if (conf->PrintLog)
+                int ret = ssl_read(c->cl_dec_stream, buf, sizeof(buf));
+                if (ret > 0)
                 {
-                    print_err(c, "<%s:%d> !!! Decoder Stream pending %d bytes\n", __func__, __LINE__, pend);
-                    if (ret > 0)
+                    if (conf->PrintLog)
+                    {
+                        print_err(c, "<%s:%d> !!! Decoder Stream pending %d bytes\n", __func__, __LINE__, pend);
                         hex_print_stderr(__func__, __LINE__, buf, ret);
+                    }
+                }
+                else if (ret == -1)
+                {
+                    print_err(c, "<%s:%d> !!! Error: Decoder Stream ssl_read()=%d\n", __func__, __LINE__, ret);
                 }
             }
         }
@@ -599,7 +626,7 @@ int Server::stream_handler(Connect *c, Stream *s)
         close_stream(c, s);
         return 0;
     }
-    else if ((s->status & (READ_HEADERS | READ_DATA)))// || (s->req_content_len && (s->status > SEND_PARAM)))
+    else if (s->status & (READ_HEADERS | READ_DATA))
     {
         int pend = SSL_pending(s->ssl);
         if (pend == 0)
@@ -608,15 +635,16 @@ int Server::stream_handler(Connect *c, Stream *s)
         if (s->frame_size == 0)
         {
             int ret = read_head_frame(s);
-            if (ret < 0)
+            if (ret <= 0)
             {
+                if (ret == ERR_TRY_AGAIN)
+                {
+                    return 0;
+                }
+
+                print_err(c, "[%u/%u]<%s:%d> read_head_frame()=%d\n", s->num_conn, s->num_stream, __func__, __LINE__, ret);
                 close_stream(c, s);
-                return 0;
-            }
-            else if (ret == 0)
-            {
-                print_err(c, "[%u/%u]<%s:%d> read_head_frame()=0\n", s->num_conn, s->num_stream, __func__, __LINE__);
-                return 0;
+                return -1;
             }
             else
             {
@@ -633,7 +661,7 @@ int Server::stream_handler(Connect *c, Stream *s)
             int nread = s->frame_size;
             if (nread > (int)sizeof(buf))
                 nread = sizeof(buf);
-            int ret = ssl_read(s->ssl, buf, nread, &s->err);
+            int ret = ssl_read(s->ssl, buf, nread);
             if (ret > 0)
             {
                 s->stream_timer = time(NULL);
@@ -665,8 +693,18 @@ int Server::stream_handler(Connect *c, Stream *s)
             }
             else if (ret < 0)
             {
-                fprintf(stderr, "[%u/%u] Error read HEADERS\n", s->num_conn, s->num_stream);
+                if (ret != ERR_TRY_AGAIN)
+                {
+                    fprintf(stderr, "[%u/%u] Error read HEADERS\n", s->num_conn, s->num_stream);
+                    close_stream(c, s);
+                    return -1;
+                }
+            }
+            else // ret == 0
+            {
+                fprintf(stderr, "[%u/%u] Error read HEADERS: SSL_ERROR_ZERO_RETURN\n", s->num_conn, s->num_stream);
                 close_stream(c, s);
+                return -1;
             }
         }
     }
@@ -703,18 +741,19 @@ int Server::stream_handler(Connect *c, Stream *s)
             }
         }
 
-        int ret = ssl_write(s->ssl, s->headers.ptr(), s->headers.size(), &s->err);
+        int ret = ssl_write(s->ssl, s->headers.ptr(), s->headers.size());
         if (ret < 0)
         {
             if (ret == ERR_TRY_AGAIN)
             {
                 s->wait_write = true;
                 c->wait_write = true;
-                return 0;
+                return -1;
             }
 
             fprintf(stderr, "[%u/%u] Error write HEADERS\n", s->num_conn, s->num_stream);
             close_stream(c, s);
+            return -1;
         }
         else if (ret > 0)
         {
@@ -817,7 +856,7 @@ int Server::stream_handler(Connect *c, Stream *s)
             }
         }
 
-        int ret = ssl_write(s->ssl, s->data.ptr(), s->data.size(), &s->err);
+        int ret = ssl_write(s->ssl, s->data.ptr(), s->data.size());
         if (ret < 0)
         {
             if (ret == ERR_TRY_AGAIN)
@@ -827,9 +866,9 @@ int Server::stream_handler(Connect *c, Stream *s)
                 return 0;
             }
 
-            fprintf(stderr, "[%u/%u] Error write DATA\n", s->num_conn, s->num_stream);
+            fprintf(stderr, "[%u/%u]-[%s] Error write DATA\n", s->num_conn, s->num_stream, log_time().c_str());
             close_stream(c, s);
-            return 0;
+            return -1;
         }
         else if (ret > 0)
         {

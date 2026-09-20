@@ -424,7 +424,7 @@ int read_head_frame(Stream *s)
     char buf[16];
     int type;
 
-    int ret = ssl_peek(s->ssl, buf, 9, &s->err);
+    int ret = ssl_peek(s->ssl, buf, 9);
     if (ret < 0)
     {
         fprintf(stderr, "<%s:%d> Error ssl_peek()=%d\n", __func__, __LINE__, ret);
@@ -481,7 +481,7 @@ int read_head_frame(Stream *s)
         }
     }
 
-    ret = ssl_read(s->ssl, buf, len_bytes + 1, &s->err);
+    ret = ssl_read(s->ssl, buf, len_bytes + 1);
     if (ret <= 0)
     {
         fprintf(stderr, "<%s:%d> Error ssl_read()=%d\n", __func__, __LINE__, ret);
@@ -507,8 +507,7 @@ int Server::accept_stream(Connect *c, int stream_num)
         if (c->tmp_stream)
         {
             char buf[256];
-            int err = 0;
-            int ret = ssl_peek(c->tmp_stream, buf, 8, &err);
+            int ret = ssl_peek(c->tmp_stream, buf, 8);
             if (ret > 0)
             {
                 if (buf[0] == 0)
@@ -523,10 +522,13 @@ int Server::accept_stream(Connect *c, int stream_num)
                         {
                             if (pend > (int)sizeof(buf))
                                 pend = sizeof(buf);
-                            int err = 0;
-                            ret = ssl_read(c->cl_ctrl_stream, buf, pend, &err);
+                            ret = ssl_read(c->cl_ctrl_stream, buf, pend);
                             if (ret > 0)
                                 hex_print_stderr(__func__, __LINE__, buf, ret);
+                            else// ???
+                            {
+                                print_err(c, "<%s:%d> !!! Error: Control Stream ssl_read()=%d\n", __func__, __LINE__, ret);
+                            }
                         }
                     }
                     else
@@ -541,8 +543,15 @@ int Server::accept_stream(Connect *c, int stream_num)
                         fprintf(stderr, "[%u]<%s:%d> Accept Encoder Stream\n", c->num_conn, __func__, __LINE__);
                         c->cl_enc_stream = c->tmp_stream;
                         c->tmp_stream = NULL;
-                        int err = 0;
-                        ssl_read(c->cl_enc_stream, buf, sizeof(buf), &err);
+                        ret = ssl_read(c->cl_enc_stream, buf, sizeof(buf));
+                        if (ret > 0)
+                        {
+                            hex_print_stderr(__func__, __LINE__, buf, ret);
+                        }
+                        else// ???
+                        {
+                            print_err(c, "<%s:%d> !!! Error: Encoder Stream ssl_read()=%d\n", __func__, __LINE__, ret);
+                        }
                     }
                     else
                     {
@@ -556,8 +565,15 @@ int Server::accept_stream(Connect *c, int stream_num)
                         fprintf(stderr, "[%u]<%s:%d> Accept Decoder Stream\n", c->num_conn, __func__, __LINE__);
                         c->cl_dec_stream = c->tmp_stream;
                         c->tmp_stream = NULL;
-                        int err = 0;
-                        ssl_read(c->cl_dec_stream, buf, sizeof(buf), &err);
+                        ret = ssl_read(c->cl_dec_stream, buf, sizeof(buf));
+                        if (ret > 0)
+                        {
+                            hex_print_stderr(__func__, __LINE__, buf, ret);
+                        }
+                        else// ???
+                        {
+                            print_err(c, "<%s:%d> !!! Error: Decoder Stream ssl_read()=%d\n", __func__, __LINE__, ret);
+                        }
                     }
                     else
                     {
@@ -583,9 +599,8 @@ int Server::accept_stream(Connect *c, int stream_num)
                 }
                 else
                 {
-                    fprintf(stderr, "[%u]<%s:%d> Error Stream %u\n", c->num_conn, __func__, __LINE__, (unsigned char)buf[0]);
-                    int err = 0;
-                    int ret = ssl_read(c->tmp_stream, buf, sizeof(buf), &err);
+                    fprintf(stderr, "[%u]<%s:%d> Error Stream Type %u\n", c->num_conn, __func__, __LINE__, (unsigned char)buf[0]);
+                    ret = ssl_read(c->tmp_stream, buf, sizeof(buf));
                     hex_print_stderr(__func__, __LINE__, buf, ret);
                     SSL_free(c->tmp_stream);
                     c->tmp_stream = NULL;
@@ -594,7 +609,7 @@ int Server::accept_stream(Connect *c, int stream_num)
             }
             else
             {
-                if ((err != SSL_ERROR_WANT_READ) && (err != SSL_ERROR_WANT_WRITE))
+                if (ret != ERR_TRY_AGAIN) // ???
                 {
                     SSL_free(c->tmp_stream);
                     c->tmp_stream = NULL;
@@ -631,8 +646,8 @@ int Server::create_uni_streams(Connect *c)
             }
         }
 
-        int err = ssl_write(c->ctrl_stream, "\x0\x04\x0", 3, NULL);// "\x04\x0" 
-        if (err <= 0)
+        int err = ssl_write(c->ctrl_stream, "\x0\x04\x0", 3);// "\x04\x0" 
+        if (err < 0)
         {
             fprintf(stderr, "<%s:%d> Error ssl_write()=%d\n", __func__, __LINE__, err);
             return -1;
@@ -661,8 +676,8 @@ int Server::create_uni_streams(Connect *c)
             }
         }
 
-        int err = ssl_write(c->enc_stream, "\x02", 1, NULL);
-        if (err <= 0)
+        int err = ssl_write(c->enc_stream, "\x02", 1);
+        if (err < 0)
         {
             fprintf(stderr, "<%s:%d> Error ssl_write()=%d\n", __func__, __LINE__, err);
             return -1;
@@ -688,8 +703,8 @@ int Server::create_uni_streams(Connect *c)
             }
         }
 
-        int err = ssl_write(c->dec_stream, "\x03", 1, NULL);
-        if (err <= 0)
+        int err = ssl_write(c->dec_stream, "\x03", 1);
+        if (err < 0)
         {
             fprintf(stderr, "<%s:%d> Error ssl_write()=%d\n", __func__, __LINE__, err);
             return -1;

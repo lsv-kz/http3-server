@@ -212,7 +212,8 @@ struct Cgi
 
     ~Cgi()
     {
-        //fprintf(stderr, "<%s:%d> %d/%d/%d pid=%d, send_post_data=%lld\n", __func__, __LINE__, cgi, start, end, pid, send_post_data);
+        if (conf->PrintLog)
+            fprintf(stderr, "<%s:%d> cgi=%d, start=%d, end=%d pid=%d\n", __func__, __LINE__, cgi, start, end, pid);
         if (pid)
         {
             kill_chld(pid);
@@ -302,8 +303,11 @@ struct Stream
 
     ~Stream()
     {
-        //fprintf(stdout, "[%u/%u~]<%s:%d> data=%lld, all_data=%lld, cgi.end=%d\n", num_conn, num_stream, __func__, __LINE__, data_send, all_data_send, cgi.end);
-        //fprintf(stderr, "[%u/%u~]<%s:%d> data=%lld, all_data=%lld, cgi.end=%d\n", num_conn, num_stream, __func__, __LINE__, data_send, all_data_send, cgi.end);
+        if (conf->PrintLog)
+        {
+            fprintf(stdout, "[%u/%u~]<%s:%d> data=%lld, all_data=%lld, cgi.end=%d\n", num_conn, num_stream, __func__, __LINE__, data_send, all_data_send, cgi.end);
+            fprintf(stderr, "[%u/%u~]<%s:%d> data=%lld, all_data=%lld, cgi.end=%d\n", num_conn, num_stream, __func__, __LINE__, data_send, all_data_send, cgi.end);
+        }
         if (ssl)
         {
             SSL_free(ssl);
@@ -376,8 +380,11 @@ struct Connect
         if (!stream_start)
             stream_start = s;
         ++num_work_stream;
-//fprintf(stderr, "[%u/%d]<%s:%d> Create Stream, work_stream=%d\n", num_conn, num_stream, __func__, __LINE__, num_work_stream);
-//fprintf(stdout, "[%u/%d]<%s:%d> Create Stream, work_stream=%d\n", num_conn, num_stream, __func__, __LINE__, num_work_stream);
+        if (conf->PrintLog)
+        {
+            fprintf(stderr, "[%u/%d]<%s:%d> Create Stream, work_stream=%d\n", num_conn, num_stream, __func__, __LINE__, num_work_stream);
+            fprintf(stdout, "[%u/%d]<%s:%d> Create Stream, work_stream=%d\n", num_conn, num_stream, __func__, __LINE__, num_work_stream);
+        }
         return s;
     }
 
@@ -394,7 +401,7 @@ struct Connect
             s->next->prev = s->prev;
         else
             stream_end = s->prev;
-        //fprintf(stderr, "<%s:%u> cgi.pid=%u, %d/%d\n", __func__, s->num_stream, s->cgi.pid, s->cgi.start, s->cgi.end);
+
         delete s;
         --num_work_stream;
     }
@@ -511,9 +518,9 @@ void signal_handler(int signo);
 SSL_CTX* InitCTX();
 int configure_context(SSL_CTX *ctx);
 const char *ssl_strerror(int err);
-int ssl_read(SSL *ssl, char *buf, int buf_size, int *err);
-int ssl_write(SSL *ssl, const char *buf, int buf_size, int *err);
-int ssl_peek(SSL *ssl, char *buf, int buf_size, int *err);
+int ssl_read(SSL *ssl, char *buf, int buf_size);
+int ssl_write(SSL *ssl, const char *buf, int buf_size);
+int ssl_peek(SSL *ssl, char *buf, int buf_size);
 //=========================== http3.cpp ================================
 void get_client_ip(Connect *c);
 int parse_headers(Stream *s);
