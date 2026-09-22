@@ -243,7 +243,7 @@ struct Stream
     STREAM_STATUS status;
     unsigned int num_conn;
     unsigned int num_stream = 0;
-    long id;
+    uint64_t id;
 
     time_t stream_timer = 0;
     bool wait_write = false;
@@ -332,7 +332,7 @@ struct Connect
     unsigned int num_stream = 0;
 
     int num_work_stream = 0;
-    long max_id = 0;
+    uint64_t max_id = 0;
 
     time_t conn_timer = 0;
     bool wait_write = false;
@@ -535,6 +535,7 @@ void header_add(BytesArray *ba, const char *name, const char *val);
 void frame_set_size(BytesArray *ba);
 void create_html(BytesArray *ba, const char *msg, const char *title);
 void create_error_message(Stream *s, int status, const char *msg);
+void set_frame_goaway(BytesArray *ba, uint64_t id);
 int cgi_parse_headers(Connect* c, Stream *resp, bool lower_case);
 int status_to_index(Stream *s, int status);
 //=========================== socket.cpp ===============================

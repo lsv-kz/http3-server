@@ -975,6 +975,43 @@ void create_error_message(Stream *s, int status, const char *msg)
     s->stream_timer = time(NULL);
 }
 //======================================================================
+void set_frame_goaway(BytesArray *ba, uint64_t id)
+{
+    id = 0x3ffffffffffffffc;
+    int id_len = 0;
+    unsigned char mask = 0;
+    if (id < 64)
+    {
+        id_len = 1;
+        mask = 0;
+    }
+    else if (id < 16384)
+    {
+        id_len = 2;
+        mask = 0x40;
+    }
+    else if (id < 1073741824)
+    {
+        id_len = 4;
+        mask = 0x80;
+    }
+    else
+    {
+        id_len = 8;
+        mask = 0xc0;
+    }
+
+    ba->ncpy("\x07", 1);
+    ba->bytecat((const char)id_len);
+    int shift = id_len - 1;
+    ba->bytecat((id >> (shift * 8)) | mask);
+    --shift;
+    for ( ; shift >= 0; --shift)
+    {
+        ba->bytecat(id >> (shift * 8));
+    }
+}
+//======================================================================
 int cgi_parse_headers(Connect* c, Stream *resp, bool lower_case)
 {
     const int MAX_HEADER_LEN = 512;

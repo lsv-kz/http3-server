@@ -429,11 +429,7 @@ void Server::connect_handler()
             printf("[%u]-[%s] ********* Connection Timeout=%d *********\n", c->num_conn, log_time().c_str(), (int)(now - c->conn_timer));
             if (c->status != CONNECT_SHUTDOWN)
             {
-                c->goaway.ncpy("\x07", 1);
-                BytesArray buf;
-                int_to_bytes(buf, c->max_id, 8, 0);
-                int_to_bytes(c->goaway, buf.size(), 8, 0);
-                c->goaway.ncat(buf.ptr(), buf.size());
+                set_frame_goaway(&c->goaway, c->max_id);
             }
             else
             {
@@ -882,11 +878,7 @@ int Server::stream_handler(Connect *c, Stream *s)
 
             if (s->resp_status == RS413)
             {
-                c->goaway.ncpy("\x07", 1);
-                BytesArray buf;
-                int_to_bytes(buf, c->max_id, 8, 0);
-                int_to_bytes(c->goaway, buf.size(), 8, 0);
-                c->goaway.ncat(buf.ptr(), buf.size());
+                set_frame_goaway(&c->goaway, c->max_id);
             }
 
             if (s->source_data == FROM_FILE)

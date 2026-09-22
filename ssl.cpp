@@ -31,9 +31,11 @@ SSL_CTX* InitCTX()
 static int alpn_select_proto_cb(SSL *ssl, const unsigned char **out, unsigned char *outlen,
                                 const unsigned char *in, unsigned int inlen, void *arg)
 {
-    hex_print_stderr("client", __LINE__, in, inlen);
+    if (conf->PrintLog)
+        hex_print_stderr("client", __LINE__, in, inlen);
     unsigned int proto_alpn_len = sizeof(proto_alpn);
-    //hex_print_stderr("server", __LINE__, proto_alpn, proto_alpn_len);
+    if (conf->PrintLog)
+        hex_print_stderr("server", __LINE__, proto_alpn, proto_alpn_len);
     for ( unsigned int i = 0; i < proto_alpn_len; i += (unsigned int)(proto_alpn[i] + 1))
     {
         for (unsigned int j = 0; j < inlen; j += (unsigned int)(in[j] + 1))
@@ -44,6 +46,7 @@ static int alpn_select_proto_cb(SSL *ssl, const unsigned char **out, unsigned ch
             {
                 *out = (unsigned char *)&in[j + 1];
                 *outlen = in[j];
+                hex_print_stderr(__func__, __LINE__, &proto_alpn[i], in[j] + 1);
                 return SSL_TLSEXT_ERR_OK;
             }
         }
