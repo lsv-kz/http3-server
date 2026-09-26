@@ -316,7 +316,7 @@ struct Stream
     }
 };
 
-void print_log(Stream *s, std::string& client_ip);
+void print_log(Stream *s);
 
 struct Connect
 {
@@ -325,8 +325,6 @@ struct Connect
 
     Stream *stream_start = NULL;
     Stream *stream_end = NULL;
-
-    std::string client_ip;
 
     unsigned int num_conn = 0;
     unsigned int num_stream = 0;
@@ -391,7 +389,7 @@ struct Connect
     void delete_stream(Stream *s)
     {
         if (s->status >= SEND_HEADERS)
-            print_log(s, client_ip);
+            print_log(s);
         if (s->prev)
         s->prev->next = s->next;
         else
@@ -535,7 +533,7 @@ void header_add(BytesArray *ba, const char *name, const char *val);
 void frame_set_size(BytesArray *ba);
 void create_html(BytesArray *ba, const char *msg, const char *title);
 void create_error_message(Stream *s, int status, const char *msg);
-void set_frame_goaway(BytesArray *ba, uint64_t id);
+int set_frame_goaway(Connect *c, uint64_t id);
 int cgi_parse_headers(Connect* c, Stream *resp, bool lower_case);
 int status_to_index(Stream *s, int status);
 //=========================== socket.cpp ===============================

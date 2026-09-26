@@ -2,6 +2,25 @@
 
 using namespace std;
 //======================================================================
+void reset_stream(Stream *s, uint64_t err)
+{
+    SSL_STREAM_RESET_ARGS args = {0};
+    args.quic_error_code = err;
+    int ret = SSL_stream_reset(s->ssl, &args, sizeof(args));
+    if (ret)
+    {
+        fprintf(stdout, "[%u/%u]<%s:%d> SSL_stream_reset(): success\n", s->num_conn, s->num_stream, __func__, __LINE__);
+        fprintf(stderr, "[%u/%u]<%s:%d> SSL_stream_reset(): success\n", s->num_conn, s->num_stream, __func__, __LINE__);
+    }
+    else
+    {
+        fprintf(stdout, "[%u/%u]<%s:%d> Error SSL_stream_reset()\n", s->num_conn, s->num_stream, __func__, __LINE__);
+        fprintf(stderr, "[%u/%u]<%s:%d> Error SSL_stream_reset()\n", s->num_conn, s->num_stream, __func__, __LINE__);
+    }
+
+    set_stream_status(s, STREAM_CLOSE);
+}
+//======================================================================
 int get_str(BytesArray *ba, int val_len, bool huffman, std::string& str, int *offset)
 {
     if ((val_len + *offset) > (int)ba->size())
@@ -215,6 +234,13 @@ int parse_headers(Stream *s)
     s->headers.init();
     if (conf->PrintLog)
         fprintf(stderr, "\n");
+    if (s->httpMethod == M_NULL)
+    {
+        fprintf(stderr, "  [%u/%u]<%s:%d> Error httpMethod == M_NULL\n", s->num_conn, s->num_stream, __func__, __LINE__);
+        reset_stream(s, 0);
+        return -1;
+    }
+
     return 0;
 }
 //======================================================================
@@ -227,13 +253,30 @@ int Server::create_response(Connect *c, Stream *s)
         return -1;
     }
 
-    if (s->req_content_len > conf->ClientMaxBodySize)
+    if (s->httpMethod == M_POST)
     {
-        char buf[128];
-        snprintf(buf, sizeof(buf), "<h2>413 Request entity too large</h2>\n"
-        "<p>Maximum allowed upload size is %lld MB</p>\n", conf->ClientMaxBodySize/1000000);
-        create_error_message(s, RS413, buf);
-        return 0;
+        if (s->content_type.size() == 0)
+        {
+            fprintf(stderr, "[%u/%u] Error headers \"content_type\" not found\n", s->num_conn, s->num_stream);
+            reset_stream(s, 0);
+            set_frame_goaway(c, s->id);
+            return -1;
+        }
+
+        if (s->content_length.size() == 0)
+        {
+            fprintf(stderr, "[%u/%u] Error headers \"content-length\" not found\n", s->num_conn, s->num_stream);
+            reset_stream(s, 0);
+            set_frame_goaway(c, s->id);
+            return -1;
+        }
+
+        if (s->req_content_len > conf->ClientMaxBodySize)
+        {
+            reset_stream(s, 0);
+            set_frame_goaway(c, c->max_id);
+            return -1;
+        }
     }
 
     int path_len = 0;
@@ -264,10 +307,7 @@ int Server::create_response(Connect *c, Stream *s)
     }
 
     if (!strncmp(s->decode_path.c_str(), "/cgi-bin/", 9) || !strncmp(s->decode_path.c_str(), "/cgi/", 5))
-    {/*
-        fprintf(stderr, "<%s:%d> Error: CGI is not supported\n", __func__, __LINE__);
-        create_error_message(s, 404, "<h2>404 Not Found (CGI is not supported)</h2>");
-        */
+    {
         s->set_cgi();
         s->source_data = DYN_PAGE;
         s->cgi.type = CGI;
@@ -303,8 +343,15 @@ int Server::create_response(Connect *c, Stream *s)
 
     s->full_path = conf->DocumentRoot + s->decode_path;
     s->source_data = get_source_data(s->full_path.c_str());
+
     if (s->source_data == FROM_FILE)
     {
+        if (s->httpMethod == M_POST)
+        {
+            create_error_message(s, RS405, "<h2>405 Not Allowed</h2>");
+            return 0;
+        }
+
         s->file_size = file_size(s->full_path.c_str());
         if (s->file_size < 0)
         {
@@ -372,6 +419,12 @@ int Server::create_response(Connect *c, Stream *s)
     }
     else if (s->source_data == DIRECTORY)
     {
+        if (s->httpMethod == M_POST)
+        {
+            create_error_message(s, RS405, "<h2>405 Not Allowed</h2>");
+            return 0;
+        }
+
         if (s->decode_path[s->decode_path.size() - 1] != '/')
         {
             set_stream_status(s, SEND_HEADERS);
@@ -971,26 +1024,28 @@ void create_error_message(Stream *s, int status, const char *msg)
     headers_create(s, status, 4);
     header_add(s, 44, "text/html");  // 44 "content-type"
     header_add(s, 4, s->buf.size()); // 4 "content-length"
+    if (status == RS405)
+        header_add(s, "allow", "GET, HEAD");
     frame_set_size(&s->headers);
     s->stream_timer = time(NULL);
 }
 //======================================================================
-void set_frame_goaway(BytesArray *ba, uint64_t id)
+int set_frame_goaway(Connect *c, uint64_t id)
 {
-    id = 0x3ffffffffffffffc;
+    //id = 0x3ffffffffffffffc;
     int id_len = 0;
     unsigned char mask = 0;
-    if (id < 64)
+    if (id < 0x40) // 64
     {
         id_len = 1;
         mask = 0;
     }
-    else if (id < 16384)
+    else if (id < 0x4000) // 16384
     {
         id_len = 2;
         mask = 0x40;
     }
-    else if (id < 1073741824)
+    else if (id < 0x40000000) // 1073741824
     {
         id_len = 4;
         mask = 0x80;
@@ -1001,15 +1056,24 @@ void set_frame_goaway(BytesArray *ba, uint64_t id)
         mask = 0xc0;
     }
 
-    ba->ncpy("\x07", 1);
-    ba->bytecat((const char)id_len);
+    c->goaway.ncpy("\x07", 1);
+    c->goaway.bytecat((const char)id_len);
     int shift = id_len - 1;
-    ba->bytecat((id >> (shift * 8)) | mask);
+    unsigned char ch = id >> (shift * 8);
+    if (ch & 0xc0)
+    {
+        print_err(c, "<%s:%d> Error\n", __func__, __LINE__);
+        return -1;
+    }
+
+    c->goaway.bytecat(ch | mask);
     --shift;
     for ( ; shift >= 0; --shift)
     {
-        ba->bytecat(id >> (shift * 8));
+        c->goaway.bytecat(id >> (shift * 8));
     }
+
+    return 0;
 }
 //======================================================================
 int cgi_parse_headers(Connect* c, Stream *resp, bool lower_case)
@@ -1128,7 +1192,7 @@ int cgi_parse_headers(Connect* c, Stream *resp, bool lower_case)
                 if (!strcmp_case(name, "status"))
                 {
                     sscanf(val, "%d", &resp->resp_status);
-                    print_err(c, "<%s:%d> status: %s\n", __func__, __LINE__, val);
+                    fprintf(stderr, "[%u/%u]<%s:%d> status: %s\n", resp->num_conn, resp->num_stream, __func__, __LINE__, val);
                 }
                 else
                 {

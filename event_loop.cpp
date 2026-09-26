@@ -162,7 +162,7 @@ int Server::set_poll(int min_timeout)
                         int ret = cgi_create_proc(c, s);
                         if (ret < 0)
                         {
-                            create_error_message(s, 500, "<h2>500 Internal Server Error, (Error create cgi)</h2>");
+                            create_error_message(s, RS500, "<h2>500 Internal Server Error, (Error create cgi)</h2>");
                         }
                         else
                         {
@@ -176,7 +176,7 @@ int Server::set_poll(int min_timeout)
                         int ret = scgi_create_connect(c, s);
                         if (ret < 0)
                         {
-                            create_error_message(s, 500, "<h2>500 Internal Server Error, (Error create scgi)</h2>");
+                            create_error_message(s, RS500, "<h2>500 Internal Server Error, (Error create scgi)</h2>");
                         }
                         else
                         {
@@ -190,7 +190,7 @@ int Server::set_poll(int min_timeout)
                         int ret = fcgi_create_connect(c, s);
                         if (ret < 0)
                         {
-                            create_error_message(s, 500, "<h2>500 Internal Server Error, (Error create fcgi)</h2>");
+                            create_error_message(s, RS500, "<h2>500 Internal Server Error, (Error create fcgi)</h2>");
                         }
                         else
                         {
@@ -319,7 +319,11 @@ void Server::event_loop(SSL *quic_listener, int socket_fd)
             poll_num += cgi_stream_size;
 
             if (poll_timeout < 0)
+            {
+                fprintf(stdout, "<%s:%d> !!! poll_timeout=%d\n", __func__, __LINE__, poll_timeout);
+                fprintf(stderr, "<%s:%d> !!! poll_timeout=%d\n", __func__, __LINE__, poll_timeout);
                 poll_timeout = 1000;
+            }
         }
 
         int ret = poll(poll_fd, poll_num, poll_timeout);
@@ -429,13 +433,13 @@ void Server::connect_handler()
             printf("[%u]-[%s] ********* Connection Timeout=%d *********\n", c->num_conn, log_time().c_str(), (int)(now - c->conn_timer));
             if (c->status != CONNECT_SHUTDOWN)
             {
-                set_frame_goaway(&c->goaway, c->max_id);
+                set_frame_goaway(c, c->max_id);
             }
             else
             {
                 close_connect(c);
-                continue;
             }
+            continue;
         }
 
         if (c->status != CONNECT_SHUTDOWN)
@@ -491,7 +495,7 @@ void Server::connect_handler()
         {
             if (SSL_get_state(c->ssl_conn) == TLS_ST_OK)
             {
-                printf("[%u]<%s:%d> SSL_get_state()=TLS_ST_OK\n", c->num_conn, __func__, __LINE__);
+                //printf("[%u]<%s:%d> SSL_get_state()=TLS_ST_OK\n", c->num_conn, __func__, __LINE__);
                 c->conn_timer = now;
                 c->status = CONNECT_OK;
                 SSL_set_incoming_stream_policy(c->ssl_conn, SSL_INCOMING_STREAM_POLICY_ACCEPT, 0);
@@ -534,7 +538,7 @@ void Server::connect_handler()
                 int ret = ssl_read(c->cl_ctrl_stream, buf, sizeof(buf));
                 if (ret > 0)
                 {
-                    if (conf->PrintLog)
+                    //if (conf->PrintLog)
                     {
                         print_err(c, "<%s:%d> !!! Control Stream pending %d bytes\n", __func__, __LINE__, pend);
                         hex_print_stderr(__func__, __LINE__, buf, ret);
@@ -556,7 +560,7 @@ void Server::connect_handler()
                 int ret = ssl_read(c->cl_enc_stream, buf, sizeof(buf));
                 if (ret > 0)
                 {
-                    if (conf->PrintLog)
+                    //if (conf->PrintLog)
                     {
                         print_err(c, "<%s:%d> !!! Encoder Stream pending %d bytes\n", __func__, __LINE__, pend);
                         hex_print_stderr(__func__, __LINE__, buf, ret);
@@ -578,7 +582,7 @@ void Server::connect_handler()
                 int ret = ssl_read(c->cl_dec_stream, buf, sizeof(buf));
                 if (ret > 0)
                 {
-                    if (conf->PrintLog)
+                    //if (conf->PrintLog)
                     {
                         print_err(c, "<%s:%d> !!! Decoder Stream pending %d bytes\n", __func__, __LINE__, pend);
                         hex_print_stderr(__func__, __LINE__, buf, ret);
@@ -613,14 +617,22 @@ int Server::stream_handler(Connect *c, Stream *s)
         fprintf(stderr, "[%u/%u] Stream Timeout=%d\n", s->num_conn, s->num_stream, (int)(now - s->stream_timer));
         printf("[%u/%u] Stream Timeout=%d\n", s->num_conn, s->num_stream, (int)(now - s->stream_timer));
         close_stream(c, s);
-        connect_shutdown(c, __func__, __LINE__);
+        //connect_shutdown(c, __func__, __LINE__);
         return -1;
     }
 
     if (s->status == STREAM_CLOSE)
     {
-        close_stream(c, s);
-        return 0;
+        if (s->resp_status == RS413)// && (s->httpMethod == M_POST))
+        {
+            set_frame_goaway(c, c->max_id);
+            return -1;
+        }
+        else
+        {
+            close_stream(c, s);
+            return 0;
+        }
     }
     else if (s->status & (READ_HEADERS | READ_DATA))
     {
@@ -667,18 +679,15 @@ int Server::stream_handler(Connect *c, Stream *s)
                     s->frame_size -= ret;
                     if (s->frame_size <= 0)
                     {
-                        create_response(c, s);
+                        if (create_response(c, s))
+                            return -1;
                     }
                 }
                 else if (s->frame_type == DATA)
                 {
-                    if (s->httpMethod == M_NULL)
-                        fprintf(stderr, "[%u/%u] Error: HEADERS frame not received\n", s->num_conn, s->num_stream);
                     s->post_data.ncat(buf, ret);
                     s->frame_size -= ret;
                     s->req_content_len -= ret;
-                    if ((s->status != READ_DATA) && (s->post_data.size() > 1500000))
-                        s->post_data.init();
                 }
                 else
                 {
@@ -815,13 +824,9 @@ int Server::stream_handler(Connect *c, Stream *s)
                 }
                 else
                 {
+                    fprintf(stderr, "<%s:%d> Error: data buffer is empty\n", __func__, __LINE__);
                     SSL_stream_conclude(s->ssl, 0);
                     set_stream_status(s, STREAM_CLOSE);
-                    if (s->resp_status >= RS301)
-                    {
-                        fprintf(stdout, "[%u/%u] response status: %d\n", s->num_conn, s->num_stream, s->resp_status);
-                    }
-
                     return 0;
                 }
             }
@@ -876,11 +881,6 @@ int Server::stream_handler(Connect *c, Stream *s)
             s->data_send += (ret - 5);
             c->size_send_data += (ret - 5);
 
-            if (s->resp_status == RS413)
-            {
-                set_frame_goaway(&c->goaway, c->max_id);
-            }
-
             if (s->source_data == FROM_FILE)
             {
                 if (s->file_size <= 0)
@@ -889,6 +889,21 @@ int Server::stream_handler(Connect *c, Stream *s)
                     set_stream_status(s, STREAM_CLOSE);
                     close(s->fd);
                     s->fd = -1;
+                }
+            }
+            else if (s->source_data == FROM_DATA_BUFFER)
+            {
+                if (s->buf.size_remain() == 0)
+                {
+                    s->buf.init();
+                    if (s->resp_status >= RS301)
+                    {
+                        fprintf(stdout, "[%u/%u]<%s:%d> response status: %d\n", 
+                                s->num_conn, s->num_stream, __func__, __LINE__, s->resp_status);
+                    }
+
+                    SSL_stream_conclude(s->ssl, 0);
+                    set_stream_status(s, STREAM_CLOSE);
                 }
             }
         }

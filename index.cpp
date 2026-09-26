@@ -18,6 +18,8 @@ static bool isimage(const char *name)
         return true;
     else if (!strlcmp_case(p, ".svg", 4))
         return true;
+    else if (!strlcmp_case(p, ".ico", 4))
+        return true;
     else if (!strlcmp_case(p, ".jpeg", 5) || !strlcmp_case(p, ".jpg", 4))
         return true;
     return false;
@@ -155,8 +157,8 @@ static int create_index_html(Connect *c, vector<string>& list, int num_files, co
         int n = lstat(file_path, &st);
         if ((n == -1) || !S_ISREG (st.st_mode))
             continue;
-        else if ((*it) == "favicon.ico")
-            continue;
+        //else if ((*it) == "favicon.ico")
+        //    continue;
 
         if (!encode((*it).c_str(), buf, sizeof(buf)))
         {
@@ -170,7 +172,10 @@ static int create_index_html(Connect *c, vector<string>& list, int num_files, co
             html->strcat(buf);
             html->strcat("\"><img src=\"");
             html->strcat(buf);
-            html->strcat("\" width=\"100\"></a>");
+            if (strstr((*it).c_str(), ".ico"))
+                html->strcat("\"></a>");
+            else
+                html->strcat("\" width=\"100\"></a>");
             html->strcat((*it).c_str());
             html->strcat("</td><td align=\"right\">");
             html->cat_int(st.st_size);
