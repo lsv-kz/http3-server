@@ -271,6 +271,12 @@ int cgi_stdin(Stream *s, int fd)
 {
     if (s->post_data.size())
     {
+        if (s->post_data.size_remain() == 0)
+        {
+            s->post_data.init();
+            return 0;
+        }
+
         int ret = write(fd, s->post_data.ptr_remain(), s->post_data.size_remain());
         if (ret > 0)
         {
@@ -385,7 +391,8 @@ int Server::cgi_handler()
         {
             if ((now - s->cgi.timer) >= conf->TimeoutCGI)
             {
-                fprintf(stderr, "[%u/%u]-[%s]<%s> CGI timeout %d sec\n", s->num_conn, s->num_stream, log_time().c_str(), __func__, (int)(now - s->cgi.timer));
+                fprintf(stderr, "[%u/%u]-[%s]<%s> CGI timeout %d sec, stream status: %s\n", s->num_conn, s->num_stream,
+                        log_time().c_str(), __func__, (int)(now - s->cgi.timer), get_stream_status(s->status));
                 create_error_message(s, RS504, "<h2>504 Gateway Time-out</h2>");
             }
         }

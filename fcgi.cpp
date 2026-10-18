@@ -304,6 +304,7 @@ int fcgi_stdout(Stream *s, int fd)
             return -1;
         }
 
+        s->cgi.timer = time(NULL);
         s->cgi.fcgi_type = buf[1];
         s->cgi.fcgiContentLen = ((unsigned char)buf[4]<<8) | (unsigned char)buf[5];
         s->cgi.fcgiPaddingLen = (unsigned char)buf[6];

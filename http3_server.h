@@ -240,8 +240,8 @@ struct Stream
     SSL *ssl = NULL;
     int err = 0;
 
-    STREAM_STATUS status;
-    unsigned int num_conn;
+    STREAM_STATUS status = READ_HEADERS;
+    unsigned int num_conn = 0;
     unsigned int num_stream = 0;
     uint64_t id;
 
@@ -297,7 +297,6 @@ struct Stream
 
     Stream()
     {
-        status = READ_HEADERS;
         stream_timer = time(NULL);
     }
 
@@ -390,8 +389,9 @@ struct Connect
     {
         if (s->status >= SEND_HEADERS)
             print_log(s);
+
         if (s->prev)
-        s->prev->next = s->next;
+            s->prev->next = s->next;
         else
             stream_start = s->next;
 
@@ -520,7 +520,6 @@ int ssl_read(SSL *ssl, char *buf, int buf_size);
 int ssl_write(SSL *ssl, const char *buf, int buf_size);
 int ssl_peek(SSL *ssl, char *buf, int buf_size);
 //=========================== http3.cpp ================================
-void get_client_ip(Connect *c);
 int parse_headers(Stream *s);
 int read_head_frame(Stream *s);
 int headers_create(Stream *s, int status, int n);
@@ -552,6 +551,7 @@ int strcmp_case(const char *s1, const char *s2);
 HTTP_METHOD get_int_method(const char *s);
 const char *get_str_method(int i);
 const char *get_str_frame_type(HTTP3_FRAME_TYPE t);
+const char *get_stream_status(STREAM_STATUS s);
 const char *get_cgi_type(CGI_TYPE t);
 const char *get_content_type(const char *s);
 int clean_path(std::string& path);

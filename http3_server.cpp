@@ -24,6 +24,7 @@ int main()
         << "\n TimeOut: " << conf->TimeOut
         << "\n MaxCgiProc: " << conf->MaxCgiProc
         << "\n TimeoutCGI: " << conf->TimeoutCGI
+        << "\n ClientMaxBodySize: " << conf->ClientMaxBodySize
         << "\n ShowMediaFiles: " << conf->ShowMediaFiles << "\n";
 
     cout << "   ------------- FastCGI/SCGI -------------\n";

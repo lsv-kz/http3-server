@@ -204,7 +204,8 @@ int Server::set_poll(int min_timeout)
                 {
                     if ((now - s->cgi.timer) >= conf->TimeoutCGI)
                     {
-                        fprintf(stderr, "[%u/%u]<%s:%d> CGI timeout %d sec; %d/%d\n", s->num_conn, s->num_stream, __func__, __LINE__, (int)(now - s->cgi.timer), (int)now, (int)s->cgi.timer);
+                        fprintf(stderr, "[%u/%u]-[%s]<%s:%d> CGI timeout %d sec; %d/%d\n", s->num_conn, s->num_stream,
+                                log_time().c_str(), __func__, __LINE__, (int)(now - s->cgi.timer), (int)now, (int)s->cgi.timer);
                         if (s->status <= SEND_HEADERS)
                             create_error_message(s, RS504, "<h2>504 Gateway Time-out</h2>");
                     }
@@ -215,8 +216,11 @@ int Server::set_poll(int min_timeout)
                         {
                             if (s->status == READ_DATA)
                             {
-                                poll_fd[1 + cgi_stream_size].fd = s->cgi.to_script;
-                                poll_fd[1 + cgi_stream_size].events = POLLOUT;
+                                if (s->post_data.size())
+                                {
+                                    poll_fd[1 + cgi_stream_size].fd = s->cgi.to_script;
+                                    poll_fd[1 + cgi_stream_size].events = POLLOUT;
+                                }
                             }
                             else
                             {
@@ -226,10 +230,18 @@ int Server::set_poll(int min_timeout)
                         }
                         else if (s->cgi.type == SCGI)
                         {
-                            if ((s->status == READ_DATA) || (s->status == SEND_PARAM))
+                            if (s->status == SEND_PARAM)
                             {
                                 poll_fd[1 + cgi_stream_size].fd = s->cgi.fd;
                                 poll_fd[1 + cgi_stream_size].events = POLLOUT;
+                            }
+                            else if (s->status == READ_DATA)
+                            {
+                                if (s->post_data.size())
+                                {
+                                    poll_fd[1 + cgi_stream_size].fd = s->cgi.fd;
+                                    poll_fd[1 + cgi_stream_size].events = POLLOUT;
+                                }
                             }
                             else
                             {
@@ -342,14 +354,14 @@ void Server::event_loop(SSL *quic_listener, int socket_fd)
         {
             cgi_handler();
         }
-/*
+
         if (SSL_handle_events(quic_listener) <= 0)
         {
             print_err("<%s:%d> The connection was closed or an error occurred.\n", __func__, __LINE__);
             ERR_print_errors_fp(stderr);
             break;
         }
-*/
+
         if (num_accept_conn < conf->MaxAcceptConnections)
         {
             SSL *ssl_conn = SSL_accept_connection(quic_listener, 0);
@@ -412,17 +424,6 @@ void Server::connect_handler()
             }
 
             continue;
-        }
-
-        if (poll_fd[0].revents & POLLIN)
-        {
-            if (SSL_handle_events(c->ssl_conn) <= 0)
-            {
-                print_err("<%s:%d> Error SSL_handle_events(ssl_conn)\n", __func__, __LINE__);
-                ERR_print_errors_fp(stderr);
-                connect_shutdown(c, __func__, __LINE__);
-                continue;
-            }
         }
 
         c->wait_write = false;
@@ -617,22 +618,13 @@ int Server::stream_handler(Connect *c, Stream *s)
         fprintf(stderr, "[%u/%u] Stream Timeout=%d\n", s->num_conn, s->num_stream, (int)(now - s->stream_timer));
         printf("[%u/%u] Stream Timeout=%d\n", s->num_conn, s->num_stream, (int)(now - s->stream_timer));
         close_stream(c, s);
-        //connect_shutdown(c, __func__, __LINE__);
         return -1;
     }
 
     if (s->status == STREAM_CLOSE)
     {
-        if (s->resp_status == RS413)// && (s->httpMethod == M_POST))
-        {
-            set_frame_goaway(c, c->max_id);
-            return -1;
-        }
-        else
-        {
-            close_stream(c, s);
-            return 0;
-        }
+        close_stream(c, s);
+        return 0;
     }
     else if (s->status & (READ_HEADERS | READ_DATA))
     {
@@ -662,10 +654,10 @@ int Server::stream_handler(Connect *c, Stream *s)
 
         if (s->frame_size)
         {
-            if ((s->status == READ_DATA) && (s->post_data.size() > 1000000))
+            if ((s->status == READ_DATA) && (s->post_data.size() > 32000))
                 return 0;
 
-            char buf[16000];
+            char buf[32000];
             int nread = s->frame_size;
             if (nread > (int)sizeof(buf))
                 nread = sizeof(buf);
@@ -764,7 +756,13 @@ int Server::stream_handler(Connect *c, Stream *s)
         {
             if (conf->PrintLog)
                 parse_headers(s);
-            set_stream_status(s, SEND_DATA);
+            if (s->httpMethod == M_HEAD)
+            {
+                SSL_stream_conclude(s->ssl, 0);
+                set_stream_status(s, STREAM_CLOSE);
+            }
+            else
+                set_stream_status(s, SEND_DATA);
         }
     }
     else if (s->status == SEND_DATA)

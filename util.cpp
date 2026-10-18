@@ -239,6 +239,27 @@ const char *get_str_frame_type(HTTP3_FRAME_TYPE t)
     return "?";
 }
 //======================================================================
+const char *get_stream_status(STREAM_STATUS s)
+{
+    switch (s)
+    {
+        case READ_HEADERS:
+            return "READ_HEADERS";
+        case SEND_PARAM:
+            return "SEND_PARAM";
+        case READ_DATA:
+            return "READ_DATA";
+        case SEND_HEADERS:
+            return "SEND_HEADERS";
+        case SEND_DATA:
+            return "SEND_DATA";
+        case STREAM_CLOSE:
+            return"STREAM_CLOSE";
+    }
+
+    return "?";
+}
+//======================================================================
 const char *get_cgi_type(CGI_TYPE t)
 {
     switch (t)

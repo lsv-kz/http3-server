@@ -2,7 +2,7 @@
 
 using namespace std;
 //======================================================================
-void reset_stream(Stream *s, uint64_t err)
+static void reset_stream(Stream *s, uint64_t err)
 {
     SSL_STREAM_RESET_ARGS args = {0};
     args.quic_error_code = err;
@@ -383,6 +383,12 @@ int Server::create_response(Connect *c, Stream *s)
             s->resp_status = RS200;
         }
 
+        if (s->httpMethod == M_HEAD)
+        {
+            s->source_data = NO_SOURCE;
+            s->resp_status = RS200;
+        }
+
         set_stream_status(s, SEND_HEADERS);
         if (s->resp_status == RS206)
             headers_create(s, RS206, 4);
@@ -402,20 +408,22 @@ int Server::create_response(Connect *c, Stream *s)
         }
 
         frame_set_size(&s->headers);
-        s->file_size = s->resp_content_len;
-
-        s->fd = open(s->full_path.c_str(), O_RDONLY | O_CLOEXEC);
-        if (s->fd < 0)
+        if (s->httpMethod == M_GET)
         {
-            fprintf(stderr, "<%s:%d> Error open(%s): %s\n", __func__, __LINE__, s->full_path.c_str(), strerror(errno));
-            if (errno == EACCES)
-                create_error_message(s, RS403, "<h2>403 Forbidden</h2>");
-            else
-                create_error_message(s, RS404, "<h2>404 Not Found</h2>");
-        }
+            s->file_size = s->resp_content_len;
+            s->fd = open(s->full_path.c_str(), O_RDONLY | O_CLOEXEC);
+            if (s->fd < 0)
+            {
+                fprintf(stderr, "<%s:%d> Error open(%s): %s\n", __func__, __LINE__, s->full_path.c_str(), strerror(errno));
+                if (errno == EACCES)
+                    create_error_message(s, RS403, "<h2>403 Forbidden</h2>");
+                else
+                    create_error_message(s, RS404, "<h2>404 Not Found</h2>");
+            }
 
-        if (s->offset > 0)
-            lseek(s->fd, s->offset, SEEK_SET);
+            if (s->offset > 0)
+                lseek(s->fd, s->offset, SEEK_SET);
+        }
     }
     else if (s->source_data == DIRECTORY)
     {
@@ -452,7 +460,11 @@ int Server::create_response(Connect *c, Stream *s)
             }
             else
             {
-                s->source_data = FROM_DATA_BUFFER;
+                if (s->httpMethod == M_GET)
+                    s->source_data = FROM_DATA_BUFFER;
+                else if (s->httpMethod == M_HEAD)
+                    s->source_data = NO_SOURCE;
+
                 headers_create(s, RS200, 4);
                 header_add(s, 4, s->buf.size());    // 4 "content-length"
                 header_add(s, 44, "text/html");
