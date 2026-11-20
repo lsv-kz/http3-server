@@ -1,6 +1,6 @@
 #include "bytes_array.h"
 //======================================================================
-const unsigned int huffman_decode_table[] = {
+const unsigned char huffman_decode_table[256] = {
      48,  49,  50,  97,  99, 101, 105, 111, 115, 116,
      32,  37,  45,  46,  47,  51,  52,  53,  54,  55,
      56,  57,  61,  65,  95,  98, 100, 102, 103, 104,
@@ -29,7 +29,7 @@ const unsigned int huffman_decode_table[] = {
     127, 220, 249,  10,  13,  22,
 };
 //======================================================================
-const unsigned int huffman_encode_table[][2] = {
+const unsigned int huffman_encode_table[256][2] = {
     { 0x00001ff8, 13}, { 0x007fffd8, 23}, { 0x0fffffe2, 28}, { 0x0fffffe3, 28},
     { 0x0fffffe4, 28}, { 0x0fffffe5, 28}, { 0x0fffffe6, 28}, { 0x0fffffe7, 28},
     { 0x0fffffe8, 28}, { 0x00ffffea, 24}, { 0x3ffffffc, 30}, { 0x0fffffe9, 28},
@@ -97,119 +97,120 @@ const unsigned int huffman_encode_table[][2] = {
 };
 
 const unsigned char mask[8] = {0, 1, 0x03, 0x07, 0x0f, 0x1f, 0x3f, 0x7f};
+void print_err(const char *format, ...);
 //======================================================================
-static int find_char(const unsigned int in, char *ch)
+static int find_char(const unsigned long long in, char *ch)
 {
     int len = 0;
     int decode_table_index = 0;
-    if (in < 0x50000000)
+    if (in < 0x5000000000000000)
     {
-        decode_table_index = in >> 27;
+        decode_table_index = in >> (27+32);
         len = 5;
     }
-    else if (in < 0xb8000000)
+    else if (in < 0xb800000000000000)
     {
-        decode_table_index = (in >> 26) - 10;
+        decode_table_index = (in >> (26+32)) - 10;
         len = 6;
     }
-    else if (in < 0xf8000000)
+    else if (in < 0xf800000000000000)
     {
-        decode_table_index = ((in >> 25) & 0x3f) + 8;
+        decode_table_index = ((in >> (25+32)) & 0x3f) + 8;
         len = 7;
     }
-    else if (in < 0xfe000000)
+    else if (in < 0xfe00000000000000)
     {
-        decode_table_index = ((in >> 24) & 0x07) + 68;
+        decode_table_index = ((in >> (24+32)) & 0x07) + 68;
         len = 8;
     }
-    else if (in < 0xff400000)
+    else if (in < 0xff40000000000000)
     {
-        decode_table_index = ((in >> 22) & 0x07) + 74;
+        decode_table_index = ((in >> (22+32)) & 0x07) + 74;
         len = 10;
     }
-    else if (in < 0xffa00000)
+    else if (in < 0xffa0000000000000)
     {
-        decode_table_index = ((in >> 21) & 0x07) + 77;
+        decode_table_index = ((in >> (21+32)) & 0x07) + 77;
         len = 11;
     }
-    else if (in < 0xffc00000)
+    else if (in < 0xffc0000000000000)
     {
-        decode_table_index = ((in & 0x100000) ? 1 : 0) + 82;
+        decode_table_index = ((in & 0x10000000000000) ? 1 : 0) + 82;
         len = 12;
     }
-    else if (in < 0xfff00000)
+    else if (in < 0xfff0000000000000)
     {
-        decode_table_index = ((in >> 19) & 0x07) + 84;
+        decode_table_index = ((in >> (19+32)) & 0x07) + 84;
         len = 13;
     }
-    else if (in < 0xfff80000)
+    else if (in < 0xfff8000000000000)
     {
-        decode_table_index = ((in & 0x40000) ? 1 : 0) + 90;
+        decode_table_index = ((in & 0x4000000000000) ? 1 : 0) + 90;
         len = 14;
     }
-    else if (in < 0xfffe0000)
+    else if (in < 0xfffe000000000000)
     {
-        decode_table_index = ((in >> 17) & 0x03) + 92;
+        decode_table_index = ((in >> (17+32)) & 0x03) + 92;
         len = 15;
     }
-    else if (in < 0xfffe6000)
+    else if (in < 0xfffe600000000000)
     {
-        decode_table_index = ((in >> 13) & 0x03) + 95;
+        decode_table_index = ((in >> (13+32)) & 0x03) + 95;
         len = 19;
     }
-    else if (in < 0xfffee000)
+    else if (in < 0xfffee00000000000)
     {
-        decode_table_index = ((in >> 12) & 0x0f) + 92;
+        decode_table_index = ((in >> (12+32)) & 0x0f) + 92;
         len = 20;
     }
-    else if (in < 0xffff4800)
+    else if (in < 0xffff480000000000)
     {
-        decode_table_index = ((in >> 11) & 0x3f) + 78;
+        decode_table_index = ((in >> (11+32)) & 0x3f) + 78;
         len = 21;
     }
-    else if (in < 0xffffb000)
+    else if (in < 0xffffb00000000000)
     {
-        decode_table_index = ((in >> 10) & 0x3f) + 101;
+        decode_table_index = ((in >> (10+32)) & 0x3f) + 101;
         len = 22;
     }
-    else if (in < 0xffffea00)
+    else if (in < 0xffffea0000000000)
     {
-        decode_table_index = ((in >> 9) & 0x3f) + 121;
+        decode_table_index = ((in >> (9+32)) & 0x3f) + 121;
         len = 23;
     }
-    else if (in < 0xfffff600)
+    else if (in < 0xfffff60000000000)
     {
-        decode_table_index = ((in >> 8) & 0x1f) + 164;
+        decode_table_index = ((in >> (8+32)) & 0x1f) + 164;
         len = 24;
     }
-    else if (in < 0xfffff800)
+    else if (in < 0xfffff80000000000)
     {
-        decode_table_index = ((in >> 7) & 0x03) + 186;
+        decode_table_index = ((in >> (7+32)) & 0x03) + 186;
         len = 25;
     }
-    else if (in < 0xfffffbc0)
+    else if (in < 0xfffffbc000000000)
     {
-        decode_table_index = ((in >> 6) & 0x0f) + 190;
+        decode_table_index = ((in >> (6+32)) & 0x0f) + 190;
         len = 26;
     }
-    else if (in < 0xfffffe20)
+    else if (in < 0xfffffe2000000000)
     {
-        decode_table_index = ((in >> 5) & 0x3f) + 175;
+        decode_table_index = ((in >> (5+32)) & 0x3f) + 175;
         len = 27;
     }
-    else if (in < 0xfffffff0)
+    else if (in < 0xfffffff000000000)
     {
-        decode_table_index = ((in >> 4) & 0x1f) + 222;
+        decode_table_index = ((in >> (4+32)) & 0x1f) + 222;
         len = 28;
     }
-    else if (in < 0xfffffffc)
+    else if (in < 0xfffffffc00000000)
     {
-        decode_table_index = ((in >> 2) & 0x03) + 253;
+        decode_table_index = ((in >> (2+32)) & 0x03) + 253;
         len = 30;
     }
-    else // in >= 0xfffffffc
+    else // in >= 0xfffffffc00000000
     {
-        fprintf(stderr, "<%s:%d> Error {in = 0x%x} >= 0xfffffffc\n", __func__, __LINE__, in);
+        print_err("<%s:%d> Error {in = 0x%llx} >= 0xfffffffc00000000\n", __func__, __LINE__, in);
         return 0;
     }
 
@@ -217,7 +218,7 @@ static int find_char(const unsigned int in, char *ch)
         *ch = huffman_decode_table[decode_table_index];
     else
     {
-        fprintf(stderr, "<%s:%d> Error decode_table_index=%d, in=%u\n", __func__, __LINE__, decode_table_index, in);
+        print_err("<%s:%d> Error decode_table_index=%d, in=%llu\n", __func__, __LINE__, decode_table_index, in);
         len = 0;
     }
 
@@ -229,77 +230,56 @@ int huffman_decode(const char *s, int len, std::string& out)
     out = "";
     if ((s == NULL) || (len == 0))
         return 0;
-    int max_bits = 32;
+    const int max_bits = 64;
 
-    unsigned int huff_buf = 0;
+    unsigned long long huff_buf = 0;
     int num_free_bits = max_bits;
 
-    unsigned int buf = 0;
-    int buf_size = 0;
-
+    unsigned long long buf = 0;
     int out_len = 0;
 
-    for ( ; (len > 0) || num_free_bits || buf_size; )
+    for ( ; (len > 0) || num_free_bits; )
     {
-        for ( ; num_free_bits > 0; )
+        for ( ; (num_free_bits > 32) && (len > 0); )
         {
-            if ((len > 0) && (buf_size == 0))
-            {
-                buf = *((unsigned char*)s++);
-                buf_size = 8;
-                len--;
-            }
-
-            if (buf_size == 0)
-                break;
-
-            if (num_free_bits < buf_size)
-            {
-                buf_size -= num_free_bits;
-                num_free_bits = 0;
-                huff_buf |= (buf >> buf_size);
-                buf &= mask[buf_size];
-            }
-            else // num_free_bits >= buf_size
-            {
-                num_free_bits -= buf_size;
-                buf_size = 0;
-                if (num_free_bits)
-                    buf <<= num_free_bits;
-                huff_buf |= buf;
-            }
+            buf = *((unsigned char*)s++);
+            len--;
+            huff_buf |= buf<<(num_free_bits - 8);
+            num_free_bits -= 8;
         }
 
         int size = max_bits - num_free_bits;
         if (size < 8)
         {
-            if (size == 0)
-                return out_len;
-            else if (size < 5)
+            if (size < 5)
             {
-                switch (huff_buf)
+                if (size == 0)
+                    return out_len;
+                else if ((size == 1) && (huff_buf == 0x8000000000000000))
+                    return out_len;
+                else if ((size == 2) && (huff_buf == 0xc000000000000000))
+                    return out_len;
+                else if ((size == 3) && (huff_buf == 0xe000000000000000))
+                    return out_len;
+                else if ((size == 4) && (huff_buf == 0xf000000000000000))
+                    return out_len;
+                else
                 {
-                    case 0x80000000:
-                    case 0xc0000000:
-                    case 0xe0000000:
-                    case 0xf0000000:
-                        return out_len;
-                    default:
-                        fprintf(stderr, "<%s:%d>Error size=%d, %b\n", __func__, __LINE__, size, huff_buf);
-                        return 0;
+                    print_err("<%s:%d>Error size=%d, %llb\n", __func__, __LINE__, size, huff_buf);
+                    return 0;
                 }
             }
-            else if ((huff_buf == 0xf8000000) && (size == 5))
+            else if ((size == 5) && (huff_buf == 0xf800000000000000))
                 return out_len;
-            else if ((huff_buf == 0xfc000000) && (size == 6))
+            else if ((size == 6) && (huff_buf == 0xfc00000000000000))
                 return out_len;
-            else if ((huff_buf == 0xfe000000) && (size == 7))
+            else if ((size == 7) && (huff_buf == 0xfe00000000000000))
                 return out_len;
         }
 
         char ch;
-        int code_len = find_char(huff_buf, &ch);
-        if (code_len > 0)
+        int code_len = find_char(huff_buf & 0xffffffffffffffff, &ch);
+        if ((code_len > 0) && (code_len <= size))
         {
             out += ch;
             out_len++;
@@ -324,6 +304,40 @@ int huffman_encode(const char *in, BytesArray& out)
     while (*in)
     {
         index = (unsigned char)*(in++);
+        int bits_len = huffman_encode_table[index][1];
+        huff_buf = huff_buf<<bits_len | huffman_encode_table[index][0];
+        huff_buf_len += bits_len;
+
+        while (huff_buf_len >= 8)
+        {
+            out.bytecat((unsigned char)(huff_buf>>(huff_buf_len - 8)));
+            out_len++;
+            huff_buf_len -= 8;
+        }
+    }
+
+    if (huff_buf_len > 0)
+    {
+        unsigned char uch = 0xff>>huff_buf_len;
+        out.bytecat(uch | (huff_buf<<(8 - huff_buf_len)));
+        out_len++;
+    }
+
+    return out_len;
+}
+//======================================================================
+int huffman_encode(const char *in, int len, BytesArray& out)
+{
+    out.init();
+    unsigned int index = 0;
+    long long huff_buf = 0;
+    int huff_buf_len = 0;
+    int out_len = 0;
+
+    while (len > 0)
+    {
+        index = (unsigned char)*(in++);
+        len--;
         int bits_len = huffman_encode_table[index][1];
         huff_buf = huff_buf<<bits_len | huffman_encode_table[index][0];
         huff_buf_len += bits_len;
